@@ -9,9 +9,12 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import kotlin.concurrent.thread
 import org.json.JSONArray
+import org.json.JSONObject
 import uniffi.mobilemesh_core.IdentityState
 import uniffi.mobilemesh_core.Mesh
 import uniffi.mobilemesh_core.MeshException
+import uniffi.mobilemesh_core.QueryFilter
+import uniffi.mobilemesh_core.SyncRecord
 import uniffi.mobilemesh_core.identityState
 import uniffi.mobilemesh_core.parseInvite
 
@@ -204,15 +207,26 @@ class Coleccion internal constructor(private val mesh: MobileMesh, val nombre: S
 
     fun leer(id: String): Documento? = todos().firstOrNull { it.id == id }
 
-    fun todos(): List<Documento> = MobileMesh.envolver {
-        mesh.nucleo.records(nombre).map { r ->
-            Documento(
-                r.id,
-                r.fields.associate { it.name to valor(it.value) },
-                r.conflicts.associate { c -> c.field to c.values.map(::valor) },
-            )
-        }
+    fun todos(): List<Documento> = MobileMesh.envolver { mesh.nucleo.records(nombre).map(::documento) }
+
+    /**
+     * Consulta: `pedidos.donde("precio", ">", 10).donde("pagado", "==", false).ordenarPor("precio").limite(20).obtener()`.
+     * Operadores: `==`, `!=`, `<`, `<=`, `>`, `>=`, `contiene`, `empieza` (sin distinguir mayúsculas), `existe`.
+     */
+    fun donde(campo: String, operador: String, valor: Any? = null) = Consulta(this).donde(campo, operador, valor)
+
+    fun ordenarPor(campo: String, descendente: Boolean = false) = Consulta(this).ordenarPor(campo, descendente)
+
+    internal fun consultar(c: Consulta): List<Documento> = MobileMesh.envolver {
+        val filtros = c.filtros.map { (campo, op, v) -> QueryFilter(campo, op, JSONArray().put(v ?: JSONObject.NULL).toString()) }
+        mesh.nucleo.query(nombre, filtros, c.orden, c.descendente, c.maximo?.toUInt()).map(::documento)
     }
+
+    private fun documento(r: SyncRecord) = Documento(
+        r.id,
+        r.fields.associate { it.name to valor(it.value) },
+        r.conflicts.associate { c -> c.field to c.values.map(::valor) },
+    )
 
     /** Borra un documento (en todos los dispositivos al sincronizar). */
     fun borrar(id: String) {
@@ -224,13 +238,15 @@ class Coleccion internal constructor(private val mesh: MobileMesh, val nombre: S
      * dispositivos o por quien la compartas). Devuelve cómo dejar de escuchar.
      */
     // ponytail: comprueba cada segundo; cambiar por un aviso del núcleo si hace falta más inmediatez.
-    fun escuchar(oyente: (List<Documento>) -> Unit): () -> Unit {
+    fun escuchar(oyente: (List<Documento>) -> Unit): () -> Unit = escucharCon(::todos, oyente)
+
+    internal fun escucharCon(fuente: () -> List<Documento>, oyente: (List<Documento>) -> Unit): () -> Unit {
         val ui = Handler(Looper.getMainLooper())
         var ultimo: List<Documento>? = null
         var activo = true
         fun mirar() {
             if (!activo) return
-            val ahora = runCatching { todos() }.getOrNull()
+            val ahora = runCatching { fuente() }.getOrNull()
             if (ahora != null && ahora != ultimo) {
                 ultimo = ahora
                 oyente(ahora)
@@ -251,4 +267,23 @@ class Coleccion internal constructor(private val mesh: MobileMesh, val nombre: S
         MobileMesh.enSegundoPlano({ mesh.nucleo.syncWithContact(contacto) }, alTerminar)
 
     private fun valor(guardado: String): Any? = runCatching { JSONArray(guardado).get(0) }.getOrDefault(guardado)
+}
+
+/** Consulta sobre una colección: se encadena y se termina con `obtener()` o `escuchar { }`. */
+class Consulta internal constructor(private val coleccion: Coleccion) {
+    internal val filtros = mutableListOf<Triple<String, String, Any?>>()
+    internal var orden: String? = null
+    internal var descendente = false
+    internal var maximo: Int? = null
+
+    fun donde(campo: String, operador: String, valor: Any? = null) = apply { filtros += Triple(campo, operador, valor) }
+
+    fun ordenarPor(campo: String, descendente: Boolean = false) = apply { orden = campo; this.descendente = descendente }
+
+    fun limite(n: Int) = apply { maximo = n }
+
+    fun obtener(): List<Documento> = coleccion.consultar(this)
+
+    /** Como `Coleccion.escuchar`, pero solo con los documentos de la consulta. */
+    fun escuchar(oyente: (List<Documento>) -> Unit): () -> Unit = coleccion.escucharCon(::obtener, oyente)
 }

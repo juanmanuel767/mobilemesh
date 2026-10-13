@@ -1092,3 +1092,34 @@ fn el_acuse_vuelve_aunque_el_destino_no_tenga_mi_buzon_apuntado() {
     mobilemesh_core::collect_letters(&st(&alice.0), &alice.1).unwrap();
     assert!(statuses(&alice.0).contains(&"entregado:por carta".to_string()));
 }
+
+#[test]
+fn consultas_filtran_ordenan_y_limitan() {
+    use mobilemesh_core::sync::{Filter, query};
+    let (dir, _) = device("consultas");
+    let s = st(&dir);
+    let d = "aa".repeat(32);
+    for (id, producto, precio, pagado) in [("p1", "Pan", 2, true), ("p2", "pan integral", 5, false), ("p3", "Leche", 12, false), ("p4", "Queso", 30, true)] {
+        sync::put(&s, &d, Policy::Lww, "pedidos", id, "producto", Some(&format!("[\"{producto}\"]"))).unwrap();
+        sync::put(&s, &d, Policy::Lww, "pedidos", id, "precio", Some(&format!("[{precio}]"))).unwrap();
+        sync::put(&s, &d, Policy::Lww, "pedidos", id, "pagado", Some(&format!("[{pagado}]"))).unwrap();
+    }
+    sync::put(&s, &d, Policy::Lww, "pedidos", "p5", "producto", Some("[\"sin precio\"]")).unwrap();
+    let f = |field: &str, op: &str, value: &str| Filter { field: field.into(), op: op.into(), value: value.into() };
+    let ids = |r: Vec<sync::Record>| r.into_iter().map(|r| r.id).collect::<Vec<_>>();
+
+    // Números: comparación numérica (12 > 5 aunque «12» < «5» como texto).
+    assert_eq!(ids(query(&s, "pedidos", &[f("precio", ">", "[4]")], None, None).unwrap()), ["p2", "p3", "p4"]);
+    // Varias condiciones a la vez.
+    assert_eq!(ids(query(&s, "pedidos", &[f("pagado", "==", "[false]"), f("precio", "<", "[10]")], None, None).unwrap()), ["p2"]);
+    // Texto sin distinguir mayúsculas.
+    assert_eq!(ids(query(&s, "pedidos", &[f("producto", "empieza", "[\"PAN\"]")], None, None).unwrap()), ["p1", "p2"]);
+    assert_eq!(ids(query(&s, "pedidos", &[f("producto", "contiene", "[\"ech\"]")], None, None).unwrap()), ["p3"]);
+    // Orden descendente, los que no tienen el campo al final, y límite.
+    assert_eq!(ids(query(&s, "pedidos", &[], Some(("precio", true)), None).unwrap()), ["p4", "p3", "p2", "p1", "p5"]);
+    assert_eq!(ids(query(&s, "pedidos", &[], Some(("precio", false)), Some(2)).unwrap()), ["p1", "p2"]);
+    assert_eq!(ids(query(&s, "pedidos", &[f("precio", "existe", "")], None, None).unwrap()).len(), 4);
+    // Tipos distintos no coinciden y un operador desconocido es un error claro.
+    assert!(query(&s, "pedidos", &[f("precio", ">", "[\"a\"]")], None, None).unwrap().is_empty());
+    assert!(query(&s, "pedidos", &[f("precio", "parecido", "[1]")], None, None).is_err());
+}

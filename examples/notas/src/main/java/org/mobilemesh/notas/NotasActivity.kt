@@ -30,6 +30,7 @@ class NotasActivity : Activity() {
         val estado = TextView(this)
         val lista = TextView(this).apply { textSize = 17f }
         val nota = EditText(this).apply { hint = "Escribe una nota" }
+        val buscar = EditText(this).apply { hint = "Buscar en las notas" }
         val nombre = EditText(this).apply { hint = "Nombre de la otra persona" }
         val invitacion = EditText(this).apply { hint = "Pega aquí su invitación" }
 
@@ -42,10 +43,11 @@ class NotasActivity : Activity() {
                 text = "Guardar nota"
                 setOnClickListener {
                     // 3. guardar: queda en el teléfono al momento y se comparte solo
-                    notas.guardar("n${System.currentTimeMillis()}", mapOf("texto" to nota.text.toString(), "de" to android.os.Build.MODEL))
+                    notas.guardar("n${System.currentTimeMillis()}", mapOf("texto" to nota.text.toString(), "de" to android.os.Build.MODEL, "hora" to System.currentTimeMillis()))
                     nota.setText("")
                 }
             })
+            addView(buscar)
             addView(lista)
             addView(TextView(context).apply { text = "\nCompartir con otra persona"; textSize = 18f })
             val miInvitacion = TextView(context).apply { setTextIsSelectable(true) }
@@ -79,11 +81,21 @@ class NotasActivity : Activity() {
         }
         setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(raiz) })
 
-        // 6. tiempo real: se redibuja cuando cambia algo, aquí o en el teléfono de la otra persona
-        dejarDeEscuchar = notas.escuchar { docs ->
-            lista.text = docs.sortedByDescending { it.id }.joinToString("\n") { "• ${it.campos["texto"]}  (${it.campos["de"]})" }
-                .ifEmpty { "Todavía no hay notas" }
+        // 6. tiempo real con consulta: las notas que contienen lo buscado, las más nuevas primero;
+        // se redibuja cuando cambia algo, aquí o en el teléfono de la otra persona
+        fun mostrar(texto: String) {
+            dejarDeEscuchar?.invoke()
+            dejarDeEscuchar = notas.donde("texto", "contiene", texto).ordenarPor("hora", descendente = true).escuchar { docs ->
+                lista.text = docs.joinToString("\n") { "• ${it.campos["texto"]}  (${it.campos["de"]})" }
+                    .ifEmpty { if (texto.isEmpty()) "Todavía no hay notas" else "Ninguna nota contiene «$texto»" }
+            }
         }
+        mostrar("")
+        buscar.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(e: android.text.Editable?) = mostrar(e.toString().trim())
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
     }
 
     override fun onResume() {

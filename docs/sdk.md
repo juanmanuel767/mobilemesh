@@ -46,6 +46,18 @@ val parar = pedidos.escuchar { docs -> mostrar(docs) } // tiempo real
 parar()                                                // dejar de escuchar
 ```
 
+Consultas: filtrar, ordenar y limitar (también en tiempo real):
+
+```kotlin
+pedidos.donde("precio", ">", 10).donde("pagado", "==", false)
+    .ordenarPor("precio", descendente = true).limite(20).obtener()
+pedidos.donde("producto", "contiene", "pan").escuchar { docs -> mostrar(docs) }
+```
+
+Operadores: `==`, `!=`, `<`, `<=`, `>`, `>=`, `contiene` y `empieza` (sin distinguir mayúsculas) y
+`existe`. Los números se comparan como números. Como los datos están cifrados, la consulta se hace
+en el teléfono sobre la colección: va bien hasta miles de documentos.
+
 - Los valores pueden ser texto, números o booleanos. `null` borra el campo.
 - Todo se guarda **al momento en el teléfono**, aunque no haya red, y se sincroniza después.
 - Si dos teléfonos cambian **campos distintos**, se conservan los dos cambios; si cambian **el
@@ -158,5 +170,4 @@ mesh.usarRele("mi-servidor.com:7900") // se aplica al reiniciar la app
 - Avisos instantáneos con la pantalla apagada (llegan en el siguiente despertar, ver sección 6).
 - Archivos por el buzón: esperan a la entrega directa.
 - iPhone y navegador (el núcleo en Rust ya está preparado para ello).
-- Consultas complejas (filtros, orden en el núcleo) y buscar entre datos de distintos usuarios
-  (no hay ningún sitio con los datos de todos: es la idea).
+- Buscar entre datos de distintos usuarios (no hay ningún sitio con los datos de todos: es la idea).

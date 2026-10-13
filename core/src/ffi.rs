@@ -126,6 +126,14 @@ pub struct SyncRecord {
     pub conflicts: Vec<Conflict>,
 }
 
+/// Condición de una consulta (ver `sync::Filter`).
+#[derive(uniffi::Record)]
+pub struct QueryFilter {
+    pub field: String,
+    pub op: String,
+    pub value: String,
+}
+
 /// Resultado de un envío.
 #[derive(uniffi::Record)]
 pub struct SendResult {
@@ -371,6 +379,21 @@ impl Mesh {
 
     pub fn records(&self, collection: String) -> R<Vec<SyncRecord>> {
         let rows = sync::records(&Store::open(&self.dir, self.me.db_key())?, &collection)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| SyncRecord {
+                id: r.id,
+                fields: r.fields.into_iter().map(|(name, value)| Field { name, value }).collect(),
+                conflicts: r.conflicts.into_iter().map(|(field, values)| Conflict { field, values }).collect(),
+            })
+            .collect())
+    }
+
+    /// Consulta: documentos que cumplen todas las condiciones, ordenados y limitados.
+    pub fn query(&self, collection: String, filters: Vec<QueryFilter>, order_by: Option<String>, descending: bool, limit: Option<u32>) -> R<Vec<SyncRecord>> {
+        let filters: Vec<sync::Filter> = filters.into_iter().map(|f| sync::Filter { field: f.field, op: f.op, value: f.value }).collect();
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        let rows = sync::query(&store, &collection, &filters, order_by.as_deref().map(|f| (f, descending)), limit.map(|n| n as usize))?;
         Ok(rows
             .into_iter()
             .map(|r| SyncRecord {

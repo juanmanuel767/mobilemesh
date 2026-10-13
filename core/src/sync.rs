@@ -331,3 +331,90 @@ mod tests {
         assert!(!raw.windows(17).any(|w| w == b"texto-muy-secreto"));
     }
 }
+
+// ---------- Consultas: filtrar, ordenar y limitar ----------
+//
+// Los valores están cifrados en la base de datos, así que no se puede filtrar con SQL: se descifra
+// la colección y se filtra en memoria.
+// ponytail: recorre toda la colección; añadir índices si alguna llega a decenas de miles de documentos.
+
+/// Condición sobre un campo. `op`: `==`, `!=`, `<`, `<=`, `>`, `>=`, `contiene`, `empieza`, `existe`.
+/// `value` con la misma codificación con que se guardan los valores (p. ej. `[10]` o `["pan"]`).
+#[derive(Debug, Clone)]
+pub struct Filter {
+    pub field: String,
+    pub op: String,
+    pub value: String,
+}
+
+/// Valor guardado → JSON (las apps lo guardan como `[valor]`; si no es JSON, es texto).
+fn json(s: &str) -> serde_json::Value {
+    match serde_json::from_str::<serde_json::Value>(s) {
+        Ok(serde_json::Value::Array(mut a)) if a.len() == 1 => a.remove(0),
+        Ok(v) => v,
+        Err(_) => serde_json::Value::String(s.into()),
+    }
+}
+
+/// Compara dos valores del mismo tipo (números, textos o booleanos); de tipos distintos, `None`.
+fn compare(a: &serde_json::Value, b: &serde_json::Value) -> Option<std::cmp::Ordering> {
+    use serde_json::Value::*;
+    match (a, b) {
+        (Number(x), Number(y)) => x.as_f64()?.partial_cmp(&y.as_f64()?),
+        (String(x), String(y)) => Some(x.cmp(y)),
+        (Bool(x), Bool(y)) => Some(x.cmp(y)),
+        _ => None,
+    }
+}
+
+fn matches(r: &Record, f: &Filter) -> Result<bool> {
+    use std::cmp::Ordering::*;
+    let field = r.fields.iter().find(|(n, _)| *n == f.field).map(|(_, v)| json(v));
+    if f.op == "existe" {
+        return Ok(field.is_some());
+    }
+    let (Some(v), want) = (field, json(&f.value)) else { return Ok(false) };
+    let text = |x: &serde_json::Value| x.as_str().map(str::to_lowercase);
+    Ok(match f.op.as_str() {
+        "==" => v == want,
+        "!=" => v != want,
+        "<" => compare(&v, &want) == Some(Less),
+        "<=" => matches!(compare(&v, &want), Some(Less | Equal)),
+        ">" => compare(&v, &want) == Some(Greater),
+        ">=" => matches!(compare(&v, &want), Some(Greater | Equal)),
+        "contiene" => matches!((text(&v), text(&want)), (Some(a), Some(b)) if a.contains(&b)),
+        "empieza" => matches!((text(&v), text(&want)), (Some(a), Some(b)) if a.starts_with(&b)),
+        op => return Err(format!("operador de consulta desconocido «{op}»").into()),
+    })
+}
+
+/// Documentos de `collection` que cumplen todas las condiciones, ordenados por `order` (campo,
+/// descendente) y como mucho `limit`. Los que no tienen el campo de orden van al final.
+pub fn query(store: &Store, collection: &str, filters: &[Filter], order: Option<(&str, bool)>, limit: Option<usize>) -> Result<Vec<Record>> {
+    let mut out = Vec::new();
+    for r in records(store, collection)? {
+        let mut ok = true;
+        for f in filters {
+            ok &= matches(&r, f)?;
+        }
+        if ok {
+            out.push(r);
+        }
+    }
+    if let Some((field, desc)) = order {
+        let key = |r: &Record| r.fields.iter().find(|(n, _)| n == field).map(|(_, v)| json(v));
+        out.sort_by(|a, b| match (key(a), key(b)) {
+            (Some(x), Some(y)) => {
+                let o = compare(&x, &y).unwrap_or(std::cmp::Ordering::Equal);
+                if desc { o.reverse() } else { o }
+            }
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        });
+    }
+    if let Some(n) = limit {
+        out.truncate(n);
+    }
+    Ok(out)
+}
