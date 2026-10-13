@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lo que la librería necesita; Android lo añade solo al manifiesto de cada app que la use. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- El despertador (alarma del sistema) para mirar el buzón aunque la app esté dormida -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Despertador exacto (lo concede el usuario en «Alarmas y recordatorios») -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <application>
+        <service android:name="org.mobilemesh.sdk.MeshService" android:exported="false" android:foregroundServiceType="remoteMessaging" />
+        <receiver android:name="org.mobilemesh.sdk.DespertadorReceiver" android:exported="false" />
+        <receiver android:name="org.mobilemesh.sdk.BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <!-- Al actualizar la app Android borra sus alarmas: hay que volver a programarlas -->
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

@@ -1,0 +1,31 @@
+[package]
+name = "mobilemesh-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+argon2 = "0.6.0"
+base64 = "0.23.1"
+chacha20poly1305 = "0.10.1"
+ed25519-dalek = "2"
+getrandom = "0.3"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.10"
+snow = "0.10.0"
+uniffi = "0.32.2"
+vodozemac = "0.11.1"
+
+[[bin]]
+name = "mesh"
+path = "src/main.rs"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+# Genera el código Kotlin/Swift a partir de la biblioteca compilada.
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+required-features = ["uniffi/cli"]

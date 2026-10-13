@@ -1,0 +1,13 @@
+target/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/mobilemesh-sdk/src/main/jniLibs/
+android/mobilemesh-sdk/src/main/java/uniffi/
+examples/notas/build/
+android/mobilemesh-sdk/build/
+android/mobilemesh-avisos-fcm/build/
+# Mapa de graphify: se regenera con /graphify
+graphify-out/
+__pycache__/
