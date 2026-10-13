@@ -336,6 +336,21 @@ class MainActivity : Activity() {
                     status.text = "Recepción instantánea activada: los mensajes llegarán aunque la pantalla esté apagada"
                 }
             },
+            button("Probar ayudante: saludar") {
+                // Funciones de servidor: llama a «saludar» del contacto «ayudante».
+                thread {
+                    val ruta = listOfNotNull(myAddr(), m.relayInfo()).joinToString("|")
+                    val id = m.callHelper("ayudante", "saludar", "{\"desde\":\"${Build.MODEL}\"}", ruta)
+                    val t0 = System.currentTimeMillis()
+                    var r: String? = null
+                    while (r == null && System.currentTimeMillis() - t0 < 30_000) {
+                        Thread.sleep(200)
+                        r = m.helperReply("ayudante", id)
+                    }
+                    val texto = r?.let { "Respuesta en ${System.currentTimeMillis() - t0} ms:\n$it" } ?: "El ayudante no respondió"
+                    runOnUiThread { android.app.AlertDialog.Builder(this).setTitle("Ayudante").setMessage(texto).setPositiveButton("Cerrar", null).show() }
+                }
+            },
             button("Usar este relé") {
                 val r = relayField.text.toString()
                 work("Guardando…") {

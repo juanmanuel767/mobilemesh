@@ -146,7 +146,34 @@ Y en el servidor, el relé con el programa de avisos y la clave de servicio de t
 FCM_CUENTA=/ruta/cuenta-servicio.json mesh-rele 0.0.0.0:7900 --avisos tools/avisar-fcm.py
 ```
 
-## 7. Redes distintas: tu propio relé
+## 7. Funciones de servidor: ayudantes
+
+Para lo que no puede hacer el teléfono (cobrar un pago, mandar un correo, consultar otra API) pon un
+**ayudante** en tu servidor: es un MobileMesh sin pantalla que ejecuta tu programa, en el lenguaje
+que quieras. La llamada y la respuesta van cifradas de extremo a extremo, y el ayudante sabe con
+certeza qué cuenta le llama.
+
+```sh
+mesh ayudante-tienda init
+mesh ayudante-tienda invitacion mi-servidor.com:7953      # esta invitación la llevan tus apps
+mesh ayudante-tienda ayudante 0.0.0.0:7953 ./funciones.sh
+```
+
+`funciones.sh` recibe el nombre de la función como argumento y `{"de": cuenta, "datos": {…}}` por
+la entrada; lo que escriba por la salida es el resultado, y si termina con error, lo que escriba en
+la salida de errores es el error (ejemplo: `tools/ejemplo-ayudante.sh`). Como mucho 30 s por llamada.
+
+```kotlin
+mesh.anadirContacto("tienda", invitacionDelAyudante)
+mesh.llamar("tienda", "cobrar", mapOf("pedido" to "p1", "total" to 12.5)) { r ->
+    r.onSuccess { resultado -> … }.onFailure { error -> … }
+}
+```
+
+Las llamadas y respuestas no aparecen en `mensajes()` ni hacen sonar avisos. Medido: respuesta en
+0,4 s desde un TECNO por wifi.
+
+## 8. Redes distintas: tu propio relé
 
 Entre wifi y datos móviles hace falta un relé (no puede leer nada):
 
@@ -158,7 +185,7 @@ mesh-rele 0.0.0.0:7900   # en un equipo con dirección pública
 mesh.usarRele("mi-servidor.com:7900") // se aplica al reiniciar la app
 ```
 
-## 8. Errores y diagnóstico
+## 9. Errores y diagnóstico
 
 - Todos los errores son `MobileMeshError` con un mensaje en español listo para mostrar.
 - `mesh.diagnostico()` devuelve un resumen sin datos privados: cuenta, dispositivo, relé, contactos,

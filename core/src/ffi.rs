@@ -404,6 +404,26 @@ impl Mesh {
             .collect())
     }
 
+    /// Funciones de servidor: llama a la función `function` del ayudante `name` (un contacto) con
+    /// `data` (JSON). `my_route`: mi ruta para la respuesta. Devuelve el identificador de la llamada.
+    pub fn call_helper(&self, name: String, function: String, data: String, my_route: String) -> R<String> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        let c = store.contacts()?.into_iter().find(|c| c.0 == name).ok_or_else(|| fail(format!("no existe el ayudante «{name}»")))?;
+        let addr = c.2.ok_or_else(|| fail(format!("no sé la dirección de «{name}»")))?;
+        Ok(crate::funciones::call(&store, &self.me, &c.1, &addr, &function, &data, &my_route)?)
+    }
+
+    /// Respuesta de una llamada, si ya llegó. Si el ayudante respondió con error, falla con ese error.
+    pub fn helper_reply(&self, name: String, call_id: String) -> R<Option<String>> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        let key = store.contact_key(&name)?.ok_or_else(|| fail(format!("no existe el ayudante «{name}»")))?;
+        match crate::funciones::reply(&store, &key, &call_id)? {
+            None => Ok(None),
+            Some(Ok(v)) => Ok(Some(v)),
+            Some(Err(e)) => Err(fail(e)),
+        }
+    }
+
     /// Cambios propios que algún dispositivo propio aún no ha confirmado.
     pub fn unsynced(&self) -> R<u64> {
         Ok(sync::unsynced(&Store::open(&self.dir, self.me.db_key())?, &identity::to_hex(&self.me.public))?)
@@ -744,6 +764,7 @@ impl Mesh {
         let rows = store.list()?;
         Ok(rows
             .into_iter()
+            .filter(|r| !crate::funciones::is_control(&r.body)) // llamadas a ayudantes y sus respuestas
             .map(|r| Message {
                 file_available: r.file.is_some() && store.blob(&r.peer_key, r.outgoing, &r.id).is_ok_and(|p| p.exists()),
                 file_name: r.file.as_ref().map(|f| f.name.clone()),

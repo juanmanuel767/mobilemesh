@@ -70,7 +70,15 @@ ceros hasta un múltiplo de 512 bytes**.
 - Copia de recuperación: `MM3-` + hex(sal 16 || nonce 12 || cifrado), con **Argon2id** (64 MiB,
   3 pasadas) y ChaCha20-Poly1305. Se siguen aceptando las `MM2-` (Argon2id 19 MiB, 2 pasadas).
 
-## 7. Relé
+## 7. Funciones de servidor (ayudantes)
+
+Mensajes normales (sección 3) con un cuerpo que empieza por el carácter `\u0001`:
+`\u0001mm-llamada:{funcion, datos, ruta}` y `\u0001mm-respuesta:{llamada, ok, resultado}`, donde
+`llamada` es el id del mensaje de la llamada y `ruta` dice cómo devolver la respuesta. No se muestran
+ni cuentan como mensajes nuevos. Un ayudante con el ajuste `abierto` acepta conexiones de cuentas
+desconocidas y las apunta como contactos. Datos y resultado: como mucho 32 KB.
+
+## 8. Relé
 
 Líneas de texto al empezar cada conexión TCP:
 

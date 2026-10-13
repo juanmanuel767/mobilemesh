@@ -14,6 +14,10 @@ const USO: &str = "uso:
   mesh <carpeta> contacto <nombre> <clave> [ip:puerto]
   mesh <carpeta> contacto <nombre> <invitación>     añadir un contacto de confianza
   mesh <carpeta> escuchar <ip:puerto>               recibir mensajes
+  mesh <carpeta> ayudante <ip:puerto> <programa>    funciones de servidor: atiende llamadas de
+                                                    cualquiera ejecutando «<programa> <función>»
+                                                    (recibe {de, datos} por la entrada y
+                                                    devuelve el resultado por la salida)
   mesh <carpeta> enviar <nombre> <ip:puerto> <texto>
   mesh <carpeta> reintentar <nombre> <ip:puerto>    reenviar los pendientes
   mesh <carpeta> mensajes                           ver mensajes y su estado
@@ -95,6 +99,52 @@ fn run() -> Result<()> {
             };
             open()?.1.add_contact(name, &key, addr.as_deref())?;
             println!("contacto añadido: {name}");
+        }
+        ["ayudante", addr, program] => {
+            let (me, store) = open()?;
+            store.set_setting("abierto", Some("1"))?;
+            drop(store);
+            let l = TcpListener::bind(addr)?;
+            println!("ayudante escuchando en {} con «{program}»", l.local_addr()?);
+            let (d, m) = (dir.to_path_buf(), me.clone());
+            std::thread::spawn(move || {
+                mobilemesh_core::accept_loop(l, d, m, || false, |r| {
+                    if let Err(e) = r {
+                        eprintln!("conexión rechazada: {e}");
+                    }
+                })
+            });
+            let mut last_retry = std::time::Instant::now();
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                let store = Store::open(dir, me.db_key())?;
+                let n = mobilemesh_core::funciones::serve_calls(&store, &me, |from, function, data| run_helper(program, from, function, data))?;
+                if n > 0 {
+                    println!("{n} llamada(s) atendida(s)");
+                }
+                if last_retry.elapsed().as_secs() >= 15 {
+                    last_retry = std::time::Instant::now();
+                    mobilemesh_core::funciones::retry_pending(&store, &me)?;
+                }
+            }
+        }
+        ["llamar", name, addr, function, data] => {
+            let (me, store) = open()?;
+            let helper = store.contact_key(name)?.ok_or("contacto desconocido")?;
+            // Mi ruta para la respuesta (en el teléfono la pone la librería).
+            let mine = std::env::var("MI_RUTA").map_err(|_| "falta MI_RUTA con mi dirección para la respuesta")?;
+            let id = mobilemesh_core::funciones::call(&store, &me, &helper, addr, function, data, &mine)?;
+            for _ in 0..100 {
+                if let Some(r) = mobilemesh_core::funciones::reply(&store, &helper, &id)? {
+                    match r {
+                        Ok(v) => println!("{v}"),
+                        Err(e) => return Err(format!("el ayudante respondió con error: {e}").into()),
+                    }
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            return Err("el ayudante no respondió en 10 s".into());
         }
         ["escuchar", addr] => {
             let (me, store) = open()?;
@@ -233,4 +283,39 @@ fn run() -> Result<()> {
         _ => return Err(USO.into()),
     }
     Ok(())
+}
+
+/// Ejecuta una función del ayudante: `<programa> <función>` con `{"de", "datos"}` por la entrada.
+/// Como mucho 30 s; la salida es el resultado y, si falla, el error es lo que escriba por la salida
+/// de errores.
+fn run_helper(program: &str, from: &str, function: &str, data: &serde_json::Value) -> std::result::Result<String, String> {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+    if function.is_empty() || !function.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+        return Err("nombre de función no válido".into());
+    }
+    let mut child = Command::new(program)
+        .arg(function)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("no se pudo ejecutar el programa del ayudante: {e}"))?;
+    let input = serde_json::json!({ "de": from, "datos": data }).to_string();
+    let _ = child.stdin.take().map(|mut i| i.write_all(input.as_bytes()));
+    let start = std::time::Instant::now();
+    let status = loop {
+        if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
+            break st;
+        }
+        if start.elapsed().as_secs() >= 30 {
+            let _ = child.kill();
+            return Err("la función tardó más de 30 s".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    let (mut out, mut err) = (String::new(), String::new());
+    let _ = child.stdout.take().map(|mut o| o.read_to_string(&mut out));
+    let _ = child.stderr.take().map(|mut e| e.read_to_string(&mut err));
+    if status.success() { Ok(out.trim().to_string()) } else { Err(err.trim().to_string()) }
 }

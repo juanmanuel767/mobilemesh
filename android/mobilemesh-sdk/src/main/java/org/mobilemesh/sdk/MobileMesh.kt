@@ -162,6 +162,29 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
         return { MeshHolder.oyentes.remove(oyente) }
     }
 
+    // ---------- Funciones de servidor (ayudantes) ----------
+
+    /**
+     * Llama a la función `funcion` de un ayudante (añadido como contacto con su invitación) y
+     * devuelve su resultado (texto o JSON). El ayudante sabe con certeza qué cuenta le llama.
+     * ```
+     * mesh.llamar("tienda", "cobrar", mapOf("pedido" to "p1", "total" to 12.5)) { r -> … }
+     * ```
+     */
+    fun llamar(ayudante: String, funcion: String, datos: Map<String, Any?> = emptyMap(), alTerminar: (Result<String>) -> Unit) =
+        enSegundoPlano({
+            val ruta = listOfNotNull(ipLocal()?.let { "$it:${MeshHolder.puerto(context)}" }, nucleo.relayInfo()).joinToString("|")
+            val id = nucleo.callHelper(ayudante, funcion, JSONObject(datos).toString(), ruta)
+            val hasta = System.currentTimeMillis() + 60_000
+            var respuesta: String? = null
+            while (respuesta == null) {
+                if (System.currentTimeMillis() > hasta) throw MobileMeshError("El ayudante «$ayudante» no respondió en 60 s")
+                Thread.sleep(250)
+                respuesta = nucleo.helperReply(ayudante, id)
+            }
+            respuesta
+        }, alTerminar)
+
     // ---------- Cuenta, red y diagnóstico ----------
 
     /** Copia de recuperación cifrada con `contrasena` (mínimo 10 caracteres). Solo el principal. */

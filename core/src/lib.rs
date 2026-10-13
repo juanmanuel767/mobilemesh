@@ -3,6 +3,7 @@
 pub mod access;
 pub mod e2e;
 pub mod files;
+pub mod funciones;
 pub mod identity;
 pub mod recovery;
 pub mod relay;
@@ -197,9 +198,13 @@ impl Drop for Slot {
 pub fn serve(store: &Store, me: &Identity, stream: TcpStream) -> Result<usize> {
     let mut s = Session::accept(stream, me)?;
     let peer = to_hex(&s.peer);
-    // Se aceptan los contactos y los otros dispositivos de mi propia cuenta.
+    // Se aceptan los contactos y los otros dispositivos de mi propia cuenta. Un ayudante «abierto»
+    // (funciones de servidor) acepta a cualquiera y lo apunta como contacto.
     if peer != me.id() && store.contact_name(&peer)?.is_none() {
-        return Err(format!("clave desconocida {}…", &peer[..12]).into());
+        if store.setting("abierto")?.as_deref() != Some("1") {
+            return Err(format!("clave desconocida {}…", &peer[..12]).into());
+        }
+        store.add_contact(&format!("usuario-{}", &peer[..12]), &peer, None)?;
     }
     access::exchange(&mut s, store, me)?;
     let device = to_hex(&s.device);
@@ -228,7 +233,8 @@ pub fn serve(store: &Store, me: &Identity, stream: TcpStream) -> Result<usize> {
                 Some((text, None)) => {
                     store.save_incoming(&peer, &id, &text)?;
                     s.send(&Frame::Ack { id })?; // solo se confirma después de guardar
-                    n += 1;
+                    n += usize::from(!funciones::is_control(&text)); // las respuestas no avisan
+
                 }
                 Some((_, Some(meta))) if meta.size > files::MAX_SIZE => {
                     s.send(&Frame::Bad { id, reason: "archivo demasiado grande".into() })?;
@@ -715,7 +721,7 @@ fn read_letter(store: &Store, me: &Identity, raw: &str, new: &mut usize) -> Resu
     match l.t.as_str() {
         "msg" => {
             store.save_incoming(&account, &l.id, &text)?;
-            *new += 1;
+            *new += usize::from(!funciones::is_control(&text));
             Ok(Some((account, l.de, l.id, l.buzon)))
         }
         "ack" => {

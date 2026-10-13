@@ -1123,3 +1123,32 @@ fn consultas_filtran_ordenan_y_limitan() {
     assert!(query(&s, "pedidos", &[f("precio", ">", "[\"a\"]")], None, None).unwrap().is_empty());
     assert!(query(&s, "pedidos", &[f("precio", "parecido", "[1]")], None, None).is_err());
 }
+
+#[test]
+fn ayudante_atiende_llamadas_de_cualquiera_y_responde() {
+    use mobilemesh_core::funciones;
+    let (app, helper) = (device("app23"), device("ayudante23"));
+    st(&helper.0).set_setting("abierto", Some("1")).unwrap(); // acepta a desconocidos
+    let (app_addr, app_l) = listen_once(app.0.clone());
+    // La app llama; el ayudante (que no la conocía) recibe la llamada.
+    let (helper_addr, h) = listen_once(helper.0.clone());
+    st(&app.0).add_contact("ayudante", &helper.1.id(), Some(&helper_addr)).unwrap();
+    let call = funciones::call(&st(&app.0), &app.1, &helper.1.id(), &helper_addr, "sumar", r#"{"a":2,"b":3}"#, &app_addr).unwrap();
+    assert_eq!(h.join().unwrap(), Ok(0), "una llamada no cuenta como mensaje nuevo");
+    // El ayudante la atiende sabiendo quién llama y responde a la ruta de la llamada.
+    let served = funciones::serve_calls(&st(&helper.0), &helper.1, |from, f, d| {
+        assert_eq!((from, f), (app.1.id().as_str(), "sumar"));
+        Ok((d["a"].as_i64().unwrap() + d["b"].as_i64().unwrap()).to_string())
+    });
+    assert_eq!(served.unwrap(), 1);
+    assert_eq!(app_l.join().unwrap(), Ok(0), "la respuesta no avisa como mensaje");
+    assert_eq!(funciones::reply(&st(&app.0), &helper.1.id(), &call).unwrap(), Some(Ok("5".into())));
+    // Una segunda pasada no la atiende otra vez.
+    assert_eq!(funciones::serve_calls(&st(&helper.0), &helper.1, |_, _, _| Ok("x".into())).unwrap(), 0);
+    // Sin el modo abierto, un desconocido no puede llamar.
+    let (other, stranger) = (device("cerrado23"), device("extrano23"));
+    let (addr, h) = listen_once(other.0.clone());
+    st(&stranger.0).add_contact("x", &other.1.id(), Some(&addr)).unwrap();
+    assert!(funciones::call(&st(&stranger.0), &stranger.1, &other.1.id(), &addr, "f", "{}", "127.0.0.1:9").is_err());
+    assert!(h.join().unwrap().is_err());
+}
