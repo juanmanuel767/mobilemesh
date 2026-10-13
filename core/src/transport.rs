@@ -33,7 +33,10 @@ pub fn open(route: &str) -> Result<TcpStream> {
                 .to_socket_addrs()
                 .map_err(Into::into)
                 .and_then(|mut a| a.next().ok_or_else(|| "dirección no válida".into()))
-                .and_then(|a| TcpStream::connect_timeout(&a, wait).map_err(Into::into)),
+                .and_then(|a| match reachable(&a) {
+                    true => TcpStream::connect_timeout(&a, wait).map_err(Into::into),
+                    false => Err("dirección privada de otra red".into()),
+                }),
         };
         if attempt.is_ok() {
             return attempt;
@@ -41,6 +44,23 @@ pub fn open(route: &str) -> Result<TcpStream> {
         last = Some(attempt);
     }
     last.unwrap_or_else(|| Err("no hay ninguna ruta para llegar a ese dispositivo".into()))
+}
+
+/// ¿Merece la pena intentar esta dirección directa? Una privada (wifi de casa, red de la operadora)
+/// solo se alcanza desde la misma red: si mi dirección de salida hacia ella no está en su mismo
+/// bloque /16, se salta y se va directo al relé (con datos móviles se perdían segundos esperando).
+// ponytail: compara el /16; una red privada más grande que eso se trataría como «otra red».
+fn reachable(target: &std::net::SocketAddr) -> bool {
+    let std::net::IpAddr::V4(t) = target.ip() else { return true };
+    let private = t.is_private() || t.is_loopback() || (t.octets()[0] == 100 && (64..128).contains(&t.octets()[1]));
+    if !private || t.is_loopback() {
+        return true;
+    }
+    let mine = std::net::UdpSocket::bind("0.0.0.0:0").and_then(|u| u.connect(target).and(u.local_addr()));
+    match mine.map(|a| a.ip()) {
+        Ok(std::net::IpAddr::V4(m)) => m.octets()[..2] == t.octets()[..2],
+        _ => true,
+    }
 }
 
 /// Comprueba que una ruta tiene buen formato (sin conectar).
