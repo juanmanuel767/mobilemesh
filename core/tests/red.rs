@@ -1338,7 +1338,7 @@ fn un_navegador_habla_con_el_rele_por_websocket() {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let ws = l.local_addr().unwrap();
     let relay_addr: std::net::SocketAddr = relay.parse().unwrap();
-    thread::spawn(move || mobilemesh_core::websocket::serve(l, relay_addr));
+    thread::spawn(move || mobilemesh_core::websocket::serve(l, relay_addr, None));
 
     // Cliente WebSocket mínimo, como un navegador.
     let mut s = TcpStream::connect(ws).unwrap();

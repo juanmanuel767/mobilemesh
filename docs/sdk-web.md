@@ -60,7 +60,7 @@ await mesh.sincronizar("ana");
 | Recibir con la app cerrada | Sí (servicio en segundo plano) | No: solo con la página abierta; lo que llegue mientras tanto espera en el buzón del relé (7 días) |
 | Conexión directa entre dispositivos | Sí (misma wifi, UPnP, IPv6) | No: siempre por el relé |
 | Clave de la cuenta | En el chip de seguridad (Keystore) | En el almacén privado de la web (OPFS) |
-| Páginas `https://` | — | El relé necesita `wss://` (nombre fijo + certificado) |
+| Páginas `https://` | — | Funcionan: el relé acepta `wss://` (candado) en el mismo puerto 7901 |
 
 ## Probado
 
@@ -68,9 +68,10 @@ await mesh.sincronizar("ana");
 - Navegador ⇄ PC y navegador ⇄ TECNO (Android) por el relé del nubia, en los dos sentidos, en
   menos de 1 segundo, con confirmación de entrega.
 - Directorio firmado descargado y comprobado dentro del navegador.
+- Desde una página `https://` real, `wss://mobilemeshjuan.duckdns.org:7901`: conexión en ~70–260 ms
+  y respuesta en 24–37 ms.
 
 ## Pendiente
 
-- `wss://` en el relé para páginas con candado.
 - Envolver la clave de la cuenta con WebCrypto (no exportable).
 - Archivos (fotos, vídeos) y recuperación con guardián desde la web.

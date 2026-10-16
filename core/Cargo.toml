@@ -19,6 +19,8 @@ vodozemac = "0.11.1"
 # Android/iPhone: puente con Kotlin/Swift. No entra en la versión para navegador.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 uniffi = "0.32.2"
+# Candado (wss://) del puente web del relé.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 # Navegador (WebAssembly): los números al azar los da el navegador.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -73,7 +73,10 @@ class ReleService : Service() {
             val mesh = File(applicationInfo.nativeLibraryDir, "libmeshguardian.so").path
             // directorio.txt: lista firmada de relés y guardianes que el relé entrega a las apps.
             val directorio = listOf("--directorio", File(filesDir, "directorio.txt").path)
-            hilo = hilo { vigilar("relé", listOf(File(applicationInfo.nativeLibraryDir, "libmeshrele.so").path) + ARGS + directorio, rele) }
+            // Candado (wss://) si hay certificado: lo deja tools/renovar-certificado.sh.
+            val (cert, clave) = File(filesDir, "cert.pem") to File(filesDir, "clave.pem")
+            val tls = if (cert.exists() && clave.exists()) listOf("--tls", cert.path, clave.path) else emptyList()
+            hilo = hilo { vigilar("relé", listOf(File(applicationInfo.nativeLibraryDir, "libmeshrele.so").path) + ARGS + directorio + tls, rele) }
             hilo { puerto(PUERTO, rele) }
             hilo { puerto(PUERTO_WEB, rele) }
             hilo {

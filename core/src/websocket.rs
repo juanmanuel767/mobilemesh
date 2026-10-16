@@ -18,9 +18,12 @@ const MAX_FRAME: u64 = 1024 * 1024;
 const MAX_POR_IP: usize = 1000;
 const WAIT: Duration = Duration::from_secs(10);
 
-/// Atiende WebSocket en `listener` y empalma cada conexión con el relé en `relay`.
+/// Atiende WebSocket en `listener` y empalma cada conexión con el relé en `relay`. Con `tls`
+/// (certificado y clave en PEM) acepta también `wss://` en el mismo puerto: si lo primero que llega
+/// es un saludo TLS, se quita el candado y se vuelve a entrar por este mismo puerto en claro.
 // ponytail: el relé ve las conexiones web como 127.0.0.1; el límite por IP real se aplica aquí.
-pub fn serve(listener: TcpListener, relay: SocketAddr) {
+pub fn serve(listener: TcpListener, relay: SocketAddr, tls: Option<(String, String)>) {
+    let yo = listener.local_addr().map(|a| SocketAddr::from(([127, 0, 0, 1], a.port())));
     let por_ip: Arc<Mutex<HashMap<IpAddr, usize>>> = Arc::default();
     for stream in listener.incoming().flatten() {
         let Ok(ip) = stream.peer_addr().map(|a| a.ip()) else { continue };
@@ -33,8 +36,18 @@ pub fn serve(listener: TcpListener, relay: SocketAddr) {
             *n += 1;
         }
         let por_ip = por_ip.clone();
+        let (tls, yo) = (tls.clone(), yo.as_ref().ok().copied());
         thread::spawn(move || {
-            let _ = bridge(stream, relay);
+            let mut primero = [0u8; 1];
+            let es_tls = stream.peek(&mut primero).is_ok_and(|n| n == 1 && primero[0] == 0x16);
+            #[cfg(not(target_arch = "wasm32"))]
+            if let (true, Some((cert, key)), Some(yo)) = (es_tls, &tls, yo) {
+                let _ = crate::tls::config(cert, key).and_then(|cfg| crate::tls::terminate(stream, cfg, yo));
+            } else {
+                let _ = bridge(stream, relay);
+            }
+            #[cfg(target_arch = "wasm32")]
+            let _ = (es_tls, tls, yo, bridge(stream, relay));
             let mut m = por_ip.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(n) = m.get_mut(&ip) {
                 *n -= 1;

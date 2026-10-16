@@ -21,6 +21,10 @@ Tu relé ──► el proyecto lo prueba ──► entra en el directorio firmad
 ¿Tu IP de casa cambia? Crea un nombre gratis en DuckDNS y escríbelo en el archivo
 `ruta-publica.txt` de la app (por ejemplo `mirele.duckdns.org:7954`).
 
+Para páginas `https://` el relé necesita candado: con el nombre de DuckDNS, el proyecto pide un
+certificado gratis de Let's Encrypt y lo deja en el móvil con `tools/renovar-certificado.sh`
+(cada mes). El relé lo usa solo, en el mismo puerto 7901.
+
 ## Opción B: un PC o servidor Linux
 
 ```sh

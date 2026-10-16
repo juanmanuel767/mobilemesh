@@ -4,7 +4,7 @@
 use mobilemesh_core::relay::Relay;
 use std::{net::TcpListener, process::exit};
 
-/// Uso: `mesh-rele [ip:puerto] [--avisos <programa>] [--max <conexiones>] [--directorio <archivo>] [--limite <KB/s>] [--websocket <ip:puerto>]`.
+/// Uso: `mesh-rele [ip:puerto] [--avisos <programa>] [--max <conexiones>] [--directorio <archivo>] [--limite <KB/s>] [--websocket <ip:puerto>] [--tls <cert.pem> <clave.pem>]`.
 /// `--websocket`: también acepta navegadores (WebSocket) en ese puerto.
 /// `--limite`: velocidad máxima del relé sumando todo, para no dejar sin internet su casa. El programa (opcional)
 /// se ejecuta con la ficha de avisos del teléfono cuando le llega una carta; por ejemplo
@@ -30,7 +30,12 @@ fn main() {
         match (TcpListener::bind(ws), relay) {
             (Ok(l), Ok(relay)) => {
                 println!("navegadores (WebSocket) en {ws}");
-                std::thread::spawn(move || mobilemesh_core::websocket::serve(l, relay));
+                // Candado (wss://) en el mismo puerto si hay certificado.
+                let tls = args.iter().position(|a| a == "--tls").and_then(|i| Some((args.get(i + 1)?.clone(), args.get(i + 2)?.clone())));
+                if tls.is_some() {
+                    println!("con candado (wss://) en el mismo puerto");
+                }
+                std::thread::spawn(move || mobilemesh_core::websocket::serve(l, relay, tls));
             }
             _ => {
                 eprintln!("no se pudo abrir {ws} para WebSocket");
