@@ -4,6 +4,12 @@
 
 <p align="center"><b>🔒 La base de datos que NO vive en la nube.</b><br>Tus datos se quedan en tus dispositivos. Alternativa gratis a Firebase y Supabase.</p>
 
+<p align="center">
+  <a href="https://github.com/juanmanuel767/mobilemesh/releases/latest"><img src="https://img.shields.io/github/v/release/juanmanuel767/mobilemesh?label=versi%C3%B3n" alt="versión"></a>
+  <a href="https://jitpack.io/#juanmanuel767/mobilemesh"><img src="https://jitpack.io/v/juanmanuel767/mobilemesh.svg" alt="JitPack"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT%20%2F%20AGPL-blue" alt="licencia"></a>
+</p>
+
 ¿Cuántas veces has leído *«se filtraron los datos de millones de usuarios»*? Pasa porque todo se guarda en un mismo servidor en la nube: un solo fallo y se lo llevan todo. MobileMesh funciona al revés:
 
 | | |
@@ -11,16 +17,40 @@
 | ☁️❌ **Nada vive en la nube** | Los datos de tu app se guardan cifrados en los dispositivos de tus usuarios: móvil, tablet o navegador. |
 | 🛡️ **No hay un servidor central que hackear** | No existe una gran base de datos con la información de todos. Para robar los datos de un usuario habría que robarle el móvil… y aun así están cifrados. |
 | 🔐 **Cifrado de extremo a extremo, como Signal** | Ni el creador, ni los relés que conectan los móviles, ni nadie en medio puede leer nada. |
+| 👤 **Usuarios por nombre** | Registro con usuario y contraseña, sin correo ni teléfono. Se añade a otros por su nombre. |
 | 📶 **Funciona sin internet** | La app sigue funcionando sin conexión y se sincroniza sola al volver. |
+| 📱 **Si pierdes el móvil, no pierdes nada** | Copia cifrada automática: se recupera con usuario y contraseña, o con un código en papel. |
+| 💳 **Pagos** | Cobra con Wompi en una línea; las claves nunca van dentro de la app. |
 | 💸 **Gratis de verdad** | Sin facturas por usuarios, lecturas o almacenamiento: los datos no ocupan servidores. |
-| 📱 **Si pierdes el móvil, no pierdes nada** | Recuperas tu cuenta y tus datos con usuario y contraseña. |
-| 🧑‍💻 **Para programadores** | SDK para Android y web, y servidor MCP para que una IA (Claude, ChatGPT) cree apps con él. |
+| 🧑‍💻 **Para programadores** | SDK para Android, React Native y web, y servidor MCP para que una IA cree apps con él. |
 
 Es un proyecto joven. Si te gusta, pruébalo, déjale una ⭐ y cuéntanos qué mejorarías.
 
 📊 **Sin promesas vacías:** [comparación honesta con Firebase, Supabase y SQLite](docs/comparacion.md) (también en qué *no* gana) · [rendimiento medido](docs/rendimiento.md) (repetible con un comando).
 
-## 🚀 Empieza en 1 minuto (Android)
+## 🚀 Empieza en 1 minuto
+
+### React Native (Android)
+
+```sh
+npm install github:juanmanuel767/mobilemesh#v0.1.5
+```
+
+```js
+import MobileMesh from "react-native-mobilemesh";
+
+await MobileMesh.iniciar();
+await MobileMesh.registrar("ana", "contraseña-larga");   // usuario, sin correo ni teléfono
+await MobileMesh.anadirPorNombre("juan");                // su app te añade sola
+await MobileMesh.enviar("juan", "hola");                 // chat cifrado en tiempo real
+MobileMesh.alRecibir(async () => console.log(await MobileMesh.mensajes()));
+await MobileMesh.guardar("tareas", "t1", { titulo: "Comprar pan" });   // base de datos
+const { estado } = await MobileMesh.pagar("cafe");                      // cobrar con Wompi
+```
+
+En `android/build.gradle`: `minSdkVersion = 28`. Archivos, avisos, recuperar la cuenta y más: [guía de React Native](docs/react-native.md).
+
+### Android (Kotlin)
 
 En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
 
@@ -34,26 +64,9 @@ dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.5") }
 val mesh = MobileMesh.iniciar(this)   // crea la cuenta la primera vez
 ```
 
-Nada más: el núcleo en Rust ya va dentro (teléfonos de 64 bits, `arm64-v8a`). [Guía del SDK de Android](docs/sdk.md).
+El núcleo en Rust ya va dentro (teléfonos de 64 bits, `arm64-v8a`). [Guía del SDK de Android](docs/sdk.md) · ejemplo [`examples/notas`](examples/notas).
 
-## 🚀 Empieza en 1 minuto (React Native)
-
-```sh
-npm install github:juanmanuel767/mobilemesh#v0.1.5
-```
-
-```js
-import MobileMesh from "react-native-mobilemesh";
-await MobileMesh.iniciar();
-await MobileMesh.registrar("ana", "contraseña-larga");   // usuarios por nombre, sin correo ni teléfono
-await MobileMesh.anadirPorNombre("juan");
-await MobileMesh.enviar("juan", "hola");                 // chat cifrado en tiempo real
-```
-
-Android (`minSdkVersion = 28`). Archivos, base de datos, avisos, recuperar la cuenta y pagos con
-Wompi en una línea: [guía de React Native](docs/react-native.md).
-
-## 🚀 Empieza en 1 minuto (web)
+### Web
 
 **1. Un solo comando** en la carpeta de tu proyecto (no hace falta instalar Rust ni compilar nada):
 
@@ -86,78 +99,97 @@ export default {
 };
 ```
 
-Para probar sin nada más: `python3 mobilemesh/servir.py 8080` y abre `http://127.0.0.1:8080`.
+Para probar sin nada más: `python3 mobilemesh/servir.py 8080` y abre `http://127.0.0.1:8080`. Mensajes, contactos y colecciones compartidas: [guía del SDK web](docs/sdk-web.md).
 
-Ya está: tu app guarda datos cifrados en el dispositivo, sin nube y sin configurar servidores (usa los relés públicos). Mensajes, contactos y colecciones compartidas: [guía del SDK web](docs/sdk-web.md).
-
----
-
-Backend de código abierto donde **los propios dispositivos guardan sus datos** y se comunican directamente y cifrados, sin base de datos central obligatoria. Pensado para usarse **en lugar de Firebase o Supabase**.
-
-Creado por **Juan Manuel Peralta Chacon** ([@juanmanuel767](https://github.com/juanmanuel767)).
-
-**Licencias:** el núcleo y los SDK (`core/`, `android/mobilemesh-sdk`, `web/`) son [MIT](LICENSE): úsalos en cualquier app, también de pago. Los programas de servidor (`servidor/`: relé, puente web y candado; `android/rele-movil`) son [AGPL-3.0](servidor/LICENSE): si los ofreces como servicio modificados, publica tus cambios.
-
-**¿Eres programador?**
-- Android: [guía del SDK](docs/sdk.md) y el ejemplo [`examples/notas`](examples/notas).
-- Web: [guía del SDK web](docs/sdk-web.md) (WebAssembly, funciona en páginas `https://`).
-- IA (Claude, ChatGPT…): [servidor MCP](docs/mcp.md).
-- ¿Quieres ayudar? [Dona un relé](docs/donar-un-rele.md) con un móvil viejo.
+## ⚙️ Cómo funciona
 
 ```
-📱 Apps Android ─┐                         ┌─ Guardián: recuperar cuenta y datos
-                 ├─► Relés (directorio firmado) ─┤
-🌐 Apps web ─────┘   cifrado de extremo a extremo └─ Nadie puede leer los datos
+📱 Apps Android / React Native ─┐                       ┌─ Guardián: copias cifradas para recuperar la cuenta
+                                ├─► Relés (cifrado E2E) ─┼─ Guía de nombres: usuarios por nombre
+🌐 Apps web ────────────────────┘                       └─ Ayudantes: funciones de servidor (p. ej. pagos)
 ```
 
-- **Relés universales, guardián, directorio, candado y web:** [0012 guardián](docs/decisiones/0012-guardian.md) · [0013 directorio](docs/decisiones/0013-directorio.md) · [0014 auditoría de las piezas nuevas](docs/decisiones/0014-auditoria-piezas-nuevas.md)
-- Reglas y amenazas: [docs/fase-0.md](docs/fase-0.md)
-- Tecnologías elegidas: [docs/decisiones/0001-tecnologias.md](docs/decisiones/0001-tecnologias.md)
-- **Auditoría y lanzamiento (Fase 13):** [docs/decisiones/0011-auditoria.md](docs/decisiones/0011-auditoria.md) · [Protocolo](docs/protocolo.md) · [Dependencias y licencias](docs/dependencias.md)
-- SDK para desarrolladores (Fase 12): [docs/decisiones/0010-sdk.md](docs/decisiones/0010-sdk.md)
-- Recibir con la app cerrada y avisos (Fase 11, en curso): [docs/decisiones/0009-avisos-y-segundo-plano.md](docs/decisiones/0009-avisos-y-segundo-plano.md)
-- Permisos (Fase 10): [docs/decisiones/0008-permisos.md](docs/decisiones/0008-permisos.md)
-- Relé, redes distintas y metadatos (Fase 9): [docs/decisiones/0007-rele-y-metadatos.md](docs/decisiones/0007-rele-y-metadatos.md)
-- Copias cifradas en otros dispositivos (Fase 8): [docs/decisiones/0006-copias-en-otros-dispositivos.md](docs/decisiones/0006-copias-en-otros-dispositivos.md)
-- Sin conexión y sincronización (Fase 7): [docs/decisiones/0005-sincronizacion.md](docs/decisiones/0005-sincronizacion.md)
-- Fotos, vídeos y documentos (Fase 6): [docs/decisiones/0004-archivos.md](docs/decisiones/0004-archivos.md)
-- Cifrado de extremo a extremo (Fase 5): [docs/decisiones/0003-cifrado-de-extremo-a-extremo.md](docs/decisiones/0003-cifrado-de-extremo-a-extremo.md)
-- Identidad, cuentas, vinculación y recuperación (Fase 2): [docs/decisiones/0002-identidad-y-recuperacion.md](docs/decisiones/0002-identidad-y-recuperacion.md)
+- Los datos viven **cifrados en cada dispositivo**. Entre dispositivos viajan cifrados de extremo a extremo: directo en la misma red, o por un **relé** que no puede leerlos.
+- El **guardián** guarda copias cifradas que no puede abrir; la copia se actualiza sola tras cada cambio.
+- La **guía de nombres** solo sabe `nombre → dirección` (datos públicos); nadie puede quitarle el nombre a su dueño.
+- Los **ayudantes** son funciones de servidor opcionales que saben con certeza qué cuenta los llama: [pagos con Wompi](examples/ayudante-wompi).
 
-## Estado
+Relés, guardián y guía públicos los ofrece hoy un móvil (app «Relé MobileMesh», [`android/rele-movil`](android/rele-movil)). Puedes montar los tuyos o [donar un relé](docs/donar-un-rele.md) con un móvil viejo.
 
-| Hecho | Pendiente |
+## ✅ Estado
+
+**Probado en móviles reales** (TECNO KJ5, Redmi A5 y nubia Z2465N), en la misma wifi y en redes distintas:
+
+- Cuentas con usuario y contraseña, varios dispositivos por cuenta, identidad protegida con Android Keystore.
+- Usuarios por nombre y solicitudes de contacto que se aceptan solas.
+- Mensajes cifrados de extremo a extremo (Double Ratchet) en tiempo real; fotos, vídeos y documentos cifrados que continúan tras un corte.
+- Base de datos local cifrada, sincronización entre dispositivos, modo sin conexión, listas compartidas con permisos.
+- Recibir con la app cerrada y avisos sin Google.
+- Copia automática en el guardián; recuperar la cuenta con contraseña o con código en papel (probado formateando un móvil).
+- Pagos con Wompi (modo de pruebas) con regreso automático a la app.
+- Relé que no puede leer nada, mensajes rellenados a tamaño fijo, bloqueo de contactos, límites contra el spam, rechazo de impostores.
+
+**Pendiente:** iPhone · usuarios por nombre en la web · más relés, guardianes y guías públicos (hoy dependen de un solo móvil) · liberar nombres abandonados · avisos automáticos de Wompi (webhooks).
+
+## 🧑‍💻 Para programadores
+
+| | |
 |---|---|
-| **Probado entre dos teléfonos reales (TECNO KJ5 Android 13 y nubia Z2465N Android 16) por wifi, sin servidor.** Cuentas con varios dispositivos vinculados por QR, identidad protegida con Android Keystore, copia de recuperación cifrada con contraseña, contactos por invitación QR, base de datos local con migraciones, cifrado de extremo a extremo por mensaje (Double Ratchet) dentro de una conexión directa cifrada y autenticada, base de datos cifrada, envío de fotos, vídeos y documentos cifrados que continúa tras un corte, datos sincronizados entre los dispositivos de la cuenta con modo sin conexión y conflictos a la vista, reintentos automáticos, copias de seguridad cifradas guardadas por contactos o dispositivos propios que ellos no pueden leer, con comprobación sin descarga, recuperación tras perder el teléfono y borrado, relé autoalojable (`mesh-rele`) para redes distintas que no puede leer nada, mensajes rellenados a tamaño fijo, retirar dispositivos perdidos con una lista firmada, bloquear contactos, límites contra el spam, listas compartidas con permiso de lectura o escritura, servicio en segundo plano con avisos sin contenido, librería para desarrolladores (`mobilemesh-sdk`) con app de ejemplo, confirmación de guardado, cola de pendientes sin duplicados, rechazo de desconocidos y de impostores | Revocar dispositivos, entregar a todos los dispositivos de una cuenta, recuperación asistida, recibir con la app en segundo plano (Fase 11), relé permanente en un servidor propio, perforación de NAT, copiar los mensajes entre los dispositivos de la cuenta, réplicas, avisos push, SDK |
+| React Native | [docs/react-native.md](docs/react-native.md) |
+| Android | [docs/sdk.md](docs/sdk.md) · [`examples/notas`](examples/notas) |
+| Web | [docs/sdk-web.md](docs/sdk-web.md) |
+| Pagos | [`examples/ayudante-wompi`](examples/ayudante-wompi) |
+| IA (Claude, ChatGPT…) | [servidor MCP](docs/mcp.md) |
+| Protocolo y seguridad | [protocolo](docs/protocolo.md) · [reglas y amenazas](docs/fase-0.md) · [dependencias y licencias](docs/dependencias.md) |
 
-## Probar
+### Probar el núcleo
 
 ```sh
 cd core
-cargo test                      # 68 pruebas, entre ellas 9 ataques simulados (cargo test --release --test medidas -- --nocapture para las mediciones)
-cargo build
-M=target/debug/mesh
+cargo test --release            # 69 pruebas, entre ellas 8 ataques simulados
+cargo build --release
+M=target/release/mesh
 $M /tmp/ana init && $M /tmp/beto init
 $M /tmp/ana contacto beto $($M /tmp/beto id)
 $M /tmp/beto contacto ana $($M /tmp/ana id)
-$M /tmp/beto escuchar 127.0.0.1:7801 &          # otra terminal o en segundo plano
+$M /tmp/beto escuchar 127.0.0.1:7801 &
 $M /tmp/ana enviar beto 127.0.0.1:7801 "hola"
 $M /tmp/beto mensajes
 ```
 
-## Relé
+### Tu propio relé, guardián o guía
 
 ```sh
-core/target/debug/mesh-rele 0.0.0.0:7900     # en cualquier equipo con dirección alcanzable
+cd servidor && cargo build --release && target/release/mesh-rele 0.0.0.0:7900   # relé
+core/target/release/mesh <carpeta> guardian 0.0.0.0:7954 <ruta pública>          # guardián
+core/target/release/mesh <carpeta> nombres 0.0.0.0:7955 <ruta pública>           # guía de nombres
 ```
 
-En la app: «Relé para otras redes» → `ip:puerto` → «Usar este relé» y reiniciarla. La invitación incluye entonces la ruta por el relé.
+O en un móvil Android: `sh android/rele-movil/construir.sh` (las tres piezas en una app).
 
-## App de Android
+<details>
+<summary><b>Decisiones de diseño</b> (por qué está hecho así)</summary>
 
-```sh
-android/build.sh            # compila el núcleo, la librería, la app de pruebas y la app de ejemplo
-android/build.sh instalar   # además lo instala y lo abre en el teléfono conectado por cable
-```
+- [0001 Tecnologías](docs/decisiones/0001-tecnologias.md)
+- [0002 Identidad, cuentas y recuperación](docs/decisiones/0002-identidad-y-recuperacion.md)
+- [0003 Cifrado de extremo a extremo](docs/decisiones/0003-cifrado-de-extremo-a-extremo.md)
+- [0004 Fotos, vídeos y documentos](docs/decisiones/0004-archivos.md)
+- [0005 Sin conexión y sincronización](docs/decisiones/0005-sincronizacion.md)
+- [0006 Copias en otros dispositivos](docs/decisiones/0006-copias-en-otros-dispositivos.md)
+- [0007 Relé y metadatos](docs/decisiones/0007-rele-y-metadatos.md)
+- [0008 Permisos](docs/decisiones/0008-permisos.md)
+- [0009 Avisos y segundo plano](docs/decisiones/0009-avisos-y-segundo-plano.md)
+- [0010 SDK](docs/decisiones/0010-sdk.md)
+- [0011 Auditoría](docs/decisiones/0011-auditoria.md)
+- [0012 Guardián](docs/decisiones/0012-guardian.md)
+- [0013 Directorio](docs/decisiones/0013-directorio.md)
+- [0014 Auditoría de las piezas nuevas](docs/decisiones/0014-auditoria-piezas-nuevas.md)
+- [0015 Guía de nombres y conexión en carrera](docs/decisiones/0015-guia-de-nombres.md)
 
-La app recibe en el puerto 7801. Para hablar con el PC: en el PC `mesh <carpeta> escuchar 0.0.0.0:7802`, y en la app pegar la invitación que da `mesh <carpeta> invitacion <ip-del-pc>:7802`.
+</details>
+
+## Licencias y autor
+
+El núcleo y los SDK (`core/`, `android/mobilemesh-sdk`, `react-native/`, `web/`) son [MIT](LICENSE): úsalos en cualquier app, también de pago. Los programas de servidor (`servidor/` y `android/rele-movil`) son [AGPL-3.0](servidor/LICENSE): si los ofreces como servicio modificados, publica tus cambios.
+
+Creado por **Juan Manuel Peralta Chacon** ([@juanmanuel767](https://github.com/juanmanuel767)).
