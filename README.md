@@ -18,6 +18,8 @@
 
 Es un proyecto joven. Si te gusta, pruébalo, déjale una ⭐ y cuéntanos qué mejorarías.
 
+📊 **Sin promesas vacías:** [comparación honesta con Firebase, Supabase y SQLite](docs/comparacion.md) (también en qué *no* gana) · [rendimiento medido](docs/rendimiento.md) (repetible con un comando).
+
 ## 🚀 Empieza en 1 minuto (Android)
 
 En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
