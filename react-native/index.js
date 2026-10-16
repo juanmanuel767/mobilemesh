@@ -61,4 +61,16 @@ export const MobileMesh = {
   diagnostico: () => N.diagnostico(),
 };
 
+/**
+ * Para el campo donde se escribe el código en papel: mientras se teclea lo deja en grupos de 4
+ * («2Y3Q-7KM9-…»), en mayúsculas, sin letras que no existen en el código y como mucho 56 letras.
+ * Úsalo en `onChangeText={(t) => setCodigo(formatearCodigo(t))}`.
+ */
+export function formatearCodigo(texto) {
+  const limpio = texto.toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1").replace(/[^0-9A-HJKMNP-TV-Z]/g, "").slice(0, 56);
+  return limpio.replace(/(.{4})(?=.)/g, "$1-");
+}
+
+MobileMesh.formatearCodigo = formatearCodigo;
+
 export default MobileMesh;
