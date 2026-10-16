@@ -10,6 +10,14 @@ Tu página ⇄ trabajador con el núcleo (WebAssembly) ⇄ WebSocket ⇄ relé �
 
 ## 1. Preparar
 
+**Lo fácil (recomendado):** un solo comando, ya compilado:
+
+```sh
+curl -sL https://github.com/juanmanuel767/mobilemesh/releases/latest/download/mobilemesh-web.tar.gz | tar xz
+```
+
+**Compilarlo tú:**
+
 ```sh
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.129 --locked

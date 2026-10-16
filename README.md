@@ -18,6 +18,43 @@
 
 Es un proyecto joven. Si te gusta, pruébalo, déjale una ⭐ y cuéntanos qué mejorarías.
 
+## 🚀 Empieza en 1 minuto (web)
+
+**1. Un solo comando** en la carpeta de tu proyecto (no hace falta instalar Rust ni compilar nada):
+
+```sh
+curl -sL https://github.com/juanmanuel767/mobilemesh/releases/latest/download/mobilemesh-web.tar.gz | tar xz
+```
+
+**2. Úsalo:**
+
+```js
+import { MobileMesh } from "./mobilemesh/mobilemesh.js";
+
+const mesh = await MobileMesh.iniciar();                    // crea la cuenta la primera vez
+await mesh.guardar("tareas", "t1", "titulo", "Comprar pan"); // cifrado y en el dispositivo
+console.log(await mesh.datos("tareas"));
+```
+
+**3. Dos cabeceras** en tu servidor (el SDK usa memoria compartida):
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+Con **Vite** (`vite.config.js`):
+
+```js
+export default {
+  server: { headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" } },
+};
+```
+
+Para probar sin nada más: `python3 mobilemesh/servir.py 8080` y abre `http://127.0.0.1:8080`.
+
+Ya está: tu app guarda datos cifrados en el dispositivo, sin nube y sin configurar servidores (usa los relés públicos). Mensajes, contactos y colecciones compartidas: [guía del SDK web](docs/sdk-web.md).
+
 ---
 
 Backend de código abierto donde **los propios dispositivos guardan sus datos** y se comunican directamente y cifrados, sin base de datos central obligatoria. Pensado para usarse **en lugar de Firebase o Supabase**.
