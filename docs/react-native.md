@@ -22,6 +22,13 @@ await MobileMesh.registrar("ana", "contraseña-larga-12");
 // En un móvil nuevo, en lugar de lo anterior:
 await MobileMesh.entrar("ana", "contraseña-larga-12");
 
+// Código en papel (56 letras): enséñalo al crear la cuenta para que lo apunten
+const codigo = await MobileMesh.codigoPapel();
+// Contraseña olvidada: entrar con el código y elegir una contraseña nueva
+await MobileMesh.entrarConCodigo("ana", codigo, "contraseña-nueva-12");
+// ¿Se puede recuperar al formatear? Si no (sin red al registrarse), protegerla:
+if (!(await MobileMesh.protegida())) await MobileMesh.proteger("contraseña-larga-12");
+
 // Hablar con alguien por su nombre (su app te añade sola)
 await MobileMesh.anadirPorNombre("juan");
 await MobileMesh.enviar("juan", "hola");            // «entregado» | «en buzón»
@@ -41,10 +48,15 @@ console.log(await MobileMesh.datos("tareas"));       // [{id: "t1", campos: {tit
 
 Los avisos de mensajes nuevos funcionan con la app cerrada (servicio propio, sin Google).
 
+La copia cifrada de la cuenta (contactos, mensajes y datos) se actualiza sola en el guardián un
+minuto después de cada cambio: al formatear, «entrar» o «entrarConCodigo» la recuperan.
+
 ## Probado
 
 - TECNO KJ5 ⇄ Redmi A5 con la app de ejemplo ChatMesh: cuentas por nombre, solicitudes aceptadas
   solas, mensajes en los dos sentidos (misma wifi y redes distintas), fotos y avisos.
+- Redmi formateado (datos borrados): recuperados cuenta, contacto y mensajes con contraseña y con
+  el código en papel.
 
 ## Pendiente
 
