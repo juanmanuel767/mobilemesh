@@ -137,7 +137,7 @@ pub fn dial(relay: &str, id: &str) -> Result<crate::net::Stream> {
     writeln!(s, "MARCAR {id}")?;
     match read_line(&mut s)?.as_str() {
         "OK" => Ok(s),
-        _ => Err("el destinatario no está conectado al relé".into()),
+        _ => Err("el destinatario no está conectado al relé o está ocupado; se reintentará".into()),
     }
 }
 

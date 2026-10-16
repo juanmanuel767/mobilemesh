@@ -70,18 +70,31 @@ fn reachable(target: &std::net::SocketAddr) -> bool {
     }
 }
 
+/// ¿«host:puerto» válido? En móvil y PC se resuelve el nombre; en el navegador no se puede buscar
+/// un nombre en internet sin conectar, así que solo se comprueba la forma (lo encontró una app de
+/// prueba: con el relé por nombre de DuckDNS no se podían añadir contactos desde la web).
+fn valid_addr(a: &str) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    return a.to_socket_addrs().is_ok();
+    #[cfg(target_arch = "wasm32")]
+    a.rsplit_once(':').is_some_and(|(h, p)| !h.is_empty() && p.parse::<u16>().is_ok())
+}
+
 /// Comprueba que una ruta tiene buen formato (sin conectar).
 pub fn check_route(route: &str) -> Result<()> {
     for part in route.split('|').map(str::trim) {
         match part.strip_prefix("relay=") {
             Some(rest) => {
                 let (relay, id) = rest.rsplit_once('/').ok_or("ruta de relé incompleta")?;
-                relay.to_socket_addrs().map_err(|_| "dirección del relé no válida")?;
+                if !valid_addr(relay) {
+                    return Err("dirección del relé no válida".into());
+                }
                 if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
                     return Err("buzón del relé no válido".into());
                 }
             }
-            None => drop(part.to_socket_addrs().map_err(|_| "la dirección no es válida")?),
+            None if !valid_addr(part) => return Err("la dirección no es válida".into()),
+            None => {}
         }
     }
     Ok(())

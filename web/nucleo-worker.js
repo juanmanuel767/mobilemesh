@@ -5,12 +5,17 @@ import init, * as nucleo from "./pkg/mobilemesh_core.js";
 // Revisa el buzón del relé en tandas de 200 ms; entre una y otra se atienden las llamadas de la
 // página. Si no hay relé o falla, espera 5 s.
 let recibiendo = false;
+let ultimoError = "";
 function revisar() {
   let pausa = 20;
   try {
     const n = nucleo.revisar(200);
     if (n > 0) self.postMessage({ t: "nuevos", n });
-  } catch {
+  } catch (e) {
+    // Sin relé o sin red: se avisa (una vez por error distinto) y se reintenta en 5 s.
+    const error = String(e?.message ?? e);
+    if (error !== ultimoError) self.postMessage({ t: "aviso", error });
+    ultimoError = error;
     pausa = 5000;
   }
   setTimeout(revisar, pausa);
@@ -21,7 +26,19 @@ self.onmessage = async ({ data }) => {
     self.mmRed = data.red;
     try {
       await init();
-      await nucleo.preparar(); // almacén permanente (OPFS)
+      // Almacén permanente (OPFS). Al recargar la página, el trabajador anterior tarda un poco en
+      // soltarlo: se reintenta unos segundos antes de rendirse (lo encontró una app de prueba).
+      for (let intento = 0; ; intento++) {
+        try {
+          await nucleo.preparar();
+          break;
+        } catch (e) {
+          const ocupado = /NoModificationAllowed|Access Handles cannot be created/.test(String(e?.message ?? e));
+          if (!ocupado) throw e;
+          if (intento >= 30) throw new Error("La app ya está abierta en otra pestaña de este navegador: ciérrala y recarga.");
+          await new Promise((r) => setTimeout(r, 200));
+        }
+      }
       self.postMessage({ t: "listo" });
     } catch (e) {
       self.postMessage({ t: "listo", error: String(e?.message ?? e) });

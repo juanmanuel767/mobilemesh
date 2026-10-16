@@ -31,6 +31,7 @@ export class MobileMesh {
 
   #respuesta({ t, n, id, ok, error }) {
     if (t === "nuevos") return this.#alNuevo?.(n);
+    if (t === "aviso") return console.warn("MobileMesh (recibir):", arguments[0].error);
     const p = this.#pendientes.get(id);
     this.#pendientes.delete(id);
     error === undefined ? p?.resolve(ok) : p?.reject(new Error(error));
