@@ -18,6 +18,22 @@
 
 Es un proyecto joven. Si te gusta, pruébalo, déjale una ⭐ y cuéntanos qué mejorarías.
 
+## 🚀 Empieza en 1 minuto (Android)
+
+En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
+
+```kotlin
+dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
+
+dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.1") }
+```
+
+```kotlin
+val mesh = MobileMesh.iniciar(this)   // crea la cuenta la primera vez
+```
+
+Nada más: el núcleo en Rust ya va dentro (teléfonos de 64 bits, `arm64-v8a`). [Guía del SDK de Android](docs/sdk.md).
+
 ## 🚀 Empieza en 1 minuto (web)
 
 **1. Un solo comando** en la carpeta de tu proyecto (no hace falta instalar Rust ni compilar nada):
