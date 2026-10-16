@@ -36,7 +36,7 @@ private val ARGS = listOf("0.0.0.0:$PUERTO", "--max", "5000", "--limite", "500",
 private const val PUERTO_GUARDIAN = 7954
 
 /** Relés universales a los que preguntar «¿con qué IP me ves?» para saber mi IP pública. */
-private val RELES_QUIEN = listOf("mobilemeshjuan.duckdns.org" to 7900, "181.60.197.125" to 7900)
+private val RELES_QUIEN = listOf("mobilemeshjuan.duckdns.org" to 7900)
 
 /** Al encender el móvil (o al actualizar la app) arranca el relé. */
 class Arranque : BroadcastReceiver() {
