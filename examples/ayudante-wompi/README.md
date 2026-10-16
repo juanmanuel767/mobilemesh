@@ -38,6 +38,8 @@ El catálogo está en `CATALOGO` dentro de `pagos.py`. Los pedidos quedan en `pe
 ## Probado (modo de pruebas)
 
 - Productos, crear pago, firma aceptada por Wompi (página de pago con el importe correcto), estado.
+- De principio a fin en un móvil real (Redmi, app ChatMesh): pago con tarjeta de prueba 4242…,
+  Wompi lo aprueba y la app muestra «Pagado» al volver.
 - Rechazado: producto inexistente y consultar el pago de otra cuenta.
 
 ## Pendiente
