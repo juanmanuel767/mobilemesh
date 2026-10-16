@@ -53,6 +53,19 @@ export const MobileMesh = {
   /** Ruta file:// descifrada en la caché (para <Image>). */
   verArchivo: (id) => N.verArchivo(id),
   guardarEnDescargas: (id) => N.guardarEnDescargas(id),
+  /**
+   * Llama a una función de servidor de un ayudante (añádelo antes con `anadirPorNombre`). El ayudante
+   * sabe con certeza qué cuenta llama. Devuelve su resultado (objeto si es JSON).
+   * Ejemplo de pagos con Wompi: examples/ayudante-wompi.
+   */
+  llamar: async (ayudante, funcion, datos = {}) => {
+    const r = await N.llamar(ayudante, funcion, JSON.stringify(datos));
+    try {
+      return JSON.parse(r);
+    } catch {
+      return r;
+    }
+  },
   /** Base de datos cifrada en el móvil. */
   guardar: (coleccion, id, campos) => N.guardar(coleccion, id, campos),
   datos: async (coleccion) => JSON.parse(await N.datos(coleccion)),

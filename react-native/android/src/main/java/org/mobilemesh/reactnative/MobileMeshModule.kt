@@ -241,6 +241,16 @@ class MobileMeshModule(private val ctx: ReactApplicationContext) : ReactContextB
         }
     }
 
+    // ---------- Funciones de servidor (ayudantes) ----------
+
+    /** Llama a la función de un ayudante (por ejemplo, pagos). `datosJson`: objeto JSON. Responde su resultado. */
+    @ReactMethod
+    fun llamar(ayudante: String, funcion: String, datosJson: String, p: Promise) {
+        val o = JSONObject(datosJson)
+        val datos = o.keys().asSequence().associateWith { o.get(it) }
+        m().llamar(ayudante, funcion, datos) { r -> r.fold({ p.resolve(it) }, { p.reject("MobileMesh", it.message, it) }) }
+    }
+
     // ---------- Base de datos (colecciones cifradas) ----------
 
     @ReactMethod
