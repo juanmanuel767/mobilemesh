@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Volver a la app</title>
+<!--
+  Página puente de MobileMesh: las pasarelas de pago (Wompi…) solo aceptan direcciones https:// para
+  regresar. Esta página abre la app con «<app>://pago» y le pasa lo que añada la pasarela (id, env…).
+  Uso: redirect-url = https://juanmanuel767.github.io/mobilemesh/volver/?app=<esquema de tu app>
+  La app debe declarar en Android un intent-filter con scheme="<app>" y host="pago".
+-->
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0f1419; color: #e6e6e6; font: 17px system-ui, sans-serif; text-align: center; padding: 16px; box-sizing: border-box; }
+  a { display: inline-block; margin-top: 16px; padding: 14px 22px; border-radius: 10px; background: #2b6cb0; color: #fff; text-decoration: none; font-weight: 600; }
+</style>
+<main>
+  <p id="texto">Volviendo a la app…</p>
+</main>
+<script>
+  const q = new URLSearchParams(location.search);
+  const app = q.get("app") || "";
+  const texto = document.getElementById("texto");
+  // Solo un esquema de app sencillo: nada de javascript:, http:, data:… (no es un redirector abierto).
+  if (/^[a-z][a-z0-9.+-]{1,30}$/.test(app) && !/^(javascript|vbscript|data|file|https?|blob|about)$/.test(app)) {
+    q.delete("app");
+    const destino = `${app}://pago${q.toString() ? "?" + q : ""}`;
+    location.replace(destino);
+    // Si el navegador no la abre solo (pide un toque), un botón.
+    const boton = document.createElement("a");
+    boton.href = destino;
+    boton.textContent = "Volver a la app";
+    setTimeout(() => { texto.textContent = "Pago terminado."; texto.after(boton); }, 800);
+  } else {
+    texto.textContent = "Falta el nombre de la app (?app=…).";
+  }
+</script>
+</html>

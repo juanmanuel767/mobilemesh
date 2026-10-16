@@ -10,10 +10,11 @@ claves.env (fuera de git):  WOMPI_PUBLICA, WOMPI_PRIVADA, WOMPI_INTEGRIDAD, WOMP
 
 Funciones (desde la app: mesh.llamar("pagos", <función>, datos)):
   productos                 → [{id, nombre, precio_cop}]
-  crear_pago {producto}     → {referencia, url}   (abrir la url: pago de Wompi)
+  crear_pago {producto, volver?} → {referencia, url}   (abrir la url: pago de Wompi; al terminar,
+                            Wompi abre «volver», p. ej. «miapp://pago», para regresar a la app)
   estado_pago {referencia}  → {estado}            PENDIENTE | APROBADO | RECHAZADO | ANULADO | ERROR
 """
-import datetime, hashlib, json, os, secrets, sys, urllib.parse, urllib.request
+import datetime, hashlib, json, os, re, secrets, sys, urllib.parse, urllib.request
 from pathlib import Path
 
 # ponytail: catálogo fijo de prueba; leerlo de una colección de MobileMesh cuando haya tienda de verdad.
@@ -58,13 +59,20 @@ def main():
         referencia = f"cm-{cuenta[:8]}-{secrets.token_hex(6)}"
         # Firma de integridad de Wompi: SHA-256 de referencia + monto en centavos + moneda + secreto.
         firma = hashlib.sha256(f"{referencia}{centavos}COP{c['WOMPI_INTEGRIDAD']}".encode()).hexdigest()
-        url = "https://checkout.wompi.co/p/?" + urllib.parse.urlencode({
+        parametros = {
             "public-key": c["WOMPI_PUBLICA"],
             "currency": "COP",
             "amount-in-cents": centavos,
             "reference": referencia,
             "signature:integrity": firma,
-        })
+        }
+        # Dirección de regreso (no entra en la firma): solo «esquema://…» sencillo, nada de javascript:.
+        volver = datos.get("volver")
+        if volver:
+            if not re.fullmatch(r"[a-z][a-z0-9+.-]*://[\w./?=&%-]*", volver) or volver.startswith(("javascript", "data", "file")):
+                raise ValueError("dirección de regreso no válida")
+            parametros["redirect-url"] = volver
+        url = "https://checkout.wompi.co/p/?" + urllib.parse.urlencode(parametros)
         p = pedidos()
         p[referencia] = {"cuenta": cuenta, "producto": datos["producto"], "precio_cop": precio, "estado": "PENDIENTE"}
         PEDIDOS.write_text(json.dumps(p, indent=1))
