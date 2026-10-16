@@ -56,7 +56,7 @@ export const MobileMesh = {
   /**
    * Llama a una función de servidor de un ayudante (añádelo antes con `anadirPorNombre`). El ayudante
    * sabe con certeza qué cuenta llama. Devuelve su resultado (objeto si es JSON).
-   * Ejemplo de pagos con Wompi: examples/ayudante-wompi.
+   * Ejemplo de pagos con Wompi: examples/ayudante-pagos.
    */
   llamar: async (ayudante, funcion, datos = {}) => {
     const r = await N.llamar(ayudante, funcion, JSON.stringify(datos));
@@ -67,7 +67,7 @@ export const MobileMesh = {
     }
   },
   /**
-   * Cobrar con un ayudante de pagos (examples/ayudante-wompi): crea el pago, abre la pasarela, vuelve
+   * Cobrar con un ayudante de pagos (examples/ayudante-pagos): crea el pago, abre la pasarela, vuelve
    * sola a la app al terminar y espera el resultado. Devuelve {referencia, estado}: estado
    * "APROBADO" | "RECHAZADO" | "ANULADO" | "ERROR", o "PENDIENTE" si en `esperarMin` no se resolvió.
    * La app no tiene que declarar nada: el regreso lo trae el kit.

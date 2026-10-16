@@ -20,7 +20,7 @@
 | 👤 **Usuarios por nombre** | Registro con usuario y contraseña, sin correo ni teléfono. Se añade a otros por su nombre. |
 | 📶 **Funciona sin internet** | La app sigue funcionando sin conexión y se sincroniza sola al volver. |
 | 📱 **Si pierdes el móvil, no pierdes nada** | Copia cifrada automática: se recupera con usuario y contraseña, o con un código en papel. |
-| 💳 **Pagos** | Cobra con Wompi en una línea; las claves nunca van dentro de la app. |
+| 💳 **Pagos** | Cobra con Wompi, Mercado Pago, Stripe o cualquier pasarela en una línea; las claves nunca van dentro de la app. |
 | 💸 **Gratis de verdad** | Sin facturas por usuarios, lecturas o almacenamiento: los datos no ocupan servidores. |
 | 🧑‍💻 **Para programadores** | SDK para Android, React Native y web, y servidor MCP para que una IA cree apps con él. |
 
@@ -45,7 +45,7 @@ await MobileMesh.anadirPorNombre("juan");                // su app te añade sol
 await MobileMesh.enviar("juan", "hola");                 // chat cifrado en tiempo real
 MobileMesh.alRecibir(async () => console.log(await MobileMesh.mensajes()));
 await MobileMesh.guardar("tareas", "t1", { titulo: "Comprar pan" });   // base de datos
-const { estado } = await MobileMesh.pagar("cafe");                      // cobrar con Wompi
+const { estado } = await MobileMesh.pagar("cafe");                      // cobrar (Wompi, Mercado Pago, Stripe…)
 ```
 
 En `android/build.gradle`: `minSdkVersion = 28`. Archivos, avisos, recuperar la cuenta y más: [guía de React Native](docs/react-native.md).
@@ -112,7 +112,7 @@ Para probar sin nada más: `python3 mobilemesh/servir.py 8080` y abre `http://12
 - Los datos viven **cifrados en cada dispositivo**. Entre dispositivos viajan cifrados de extremo a extremo: directo en la misma red, o por un **relé** que no puede leerlos.
 - El **guardián** guarda copias cifradas que no puede abrir; la copia se actualiza sola tras cada cambio.
 - La **guía de nombres** solo sabe `nombre → dirección` (datos públicos); nadie puede quitarle el nombre a su dueño.
-- Los **ayudantes** son funciones de servidor opcionales que saben con certeza qué cuenta los llama: [pagos con Wompi](examples/ayudante-wompi).
+- Los **ayudantes** son funciones de servidor opcionales que saben con certeza qué cuenta los llama: [pagos con cualquier pasarela](examples/ayudante-pagos).
 
 Relés, guardián y guía públicos los ofrece hoy un móvil (app «Relé MobileMesh», [`android/rele-movil`](android/rele-movil)). Puedes montar los tuyos o [donar un relé](docs/donar-un-rele.md) con un móvil viejo.
 
@@ -138,7 +138,7 @@ Relés, guardián y guía públicos los ofrece hoy un móvil (app «Relé Mobile
 | React Native | [docs/react-native.md](docs/react-native.md) |
 | Android | [docs/sdk.md](docs/sdk.md) · [`examples/notas`](examples/notas) |
 | Web | [docs/sdk-web.md](docs/sdk-web.md) |
-| Pagos | [`examples/ayudante-wompi`](examples/ayudante-wompi) |
+| Pagos | [`examples/ayudante-pagos`](examples/ayudante-pagos) |
 | IA (Claude, ChatGPT…) | [servidor MCP](docs/mcp.md) |
 | Protocolo y seguridad | [protocolo](docs/protocolo.md) · [reglas y amenazas](docs/fase-0.md) · [dependencias y licencias](docs/dependencias.md) |
 

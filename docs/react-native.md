@@ -41,7 +41,7 @@ if (f) await MobileMesh.enviarArchivo("juan", f.uri, f.nombre);
 const ruta = await MobileMesh.verArchivo(idMensaje);  // file:// para <Image>
 await MobileMesh.guardarEnDescargas(idMensaje);
 
-// Cobrar (con un ayudante de pagos, ver examples/ayudante-wompi): abre la pasarela, vuelve sola a
+// Cobrar (con un ayudante de pagos, ver examples/ayudante-pagos): abre la pasarela, vuelve sola a
 // la app y espera el resultado. La app no tiene que declarar nada en Android.
 const { estado } = await MobileMesh.pagar("cafe");   // "APROBADO" | "RECHAZADO" | …
 
