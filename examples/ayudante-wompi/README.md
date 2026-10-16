@@ -24,13 +24,13 @@ App ◀──────────── {estado: "APROBADO"} ─────
 2. Cuenta del ayudante y su nombre en la guía:
    `mesh pagos-mesh init` y `mesh pagos-mesh registrar-nombre <guía> pagos <ip:puerto>`
 3. Arrancar: `MM_CLAVES=/ruta/claves.env mesh pagos-mesh ayudante <ip:puerto> examples/ayudante-wompi/pagos.py`
-4. En la app (React Native):
+4. En la app (React Native), una línea:
    ```js
-   await MobileMesh.anadirPorNombre("pagos");
-   const { url, referencia } = await MobileMesh.llamar("pagos", "crear_pago", { producto: "cafe" });
-   Linking.openURL(url);
-   const { estado } = await MobileMesh.llamar("pagos", "estado_pago", { referencia });
+   const { estado } = await MobileMesh.pagar("cafe");   // "APROBADO" | "RECHAZADO" | …
    ```
+   `pagar()` añade el ayudante, crea el pago, abre Wompi y espera el resultado. Para volver a la app,
+   Wompi (que solo acepta https) va a la página puente `docs/volver` (GitHub Pages), que abre
+   `<id de la app>://pago`; el kit trae la pantalla que lo recibe, así que la app no declara nada.
 
 El catálogo está en `CATALOGO` dentro de `pagos.py`. Los pedidos quedan en `pedidos.json`, junto a
 `claves.env`. Solo la cuenta que creó un pago puede consultar su estado.

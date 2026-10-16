@@ -1,5 +1,5 @@
 // MobileMesh para React Native (Android): base de datos, mensajes, archivos y avisos sin servidores.
-import { NativeEventEmitter, NativeModules } from "react-native";
+import { AppState, Linking, NativeEventEmitter, NativeModules } from "react-native";
 
 const N = NativeModules.MobileMesh;
 if (!N) throw new Error("MobileMesh: módulo nativo no encontrado. ¿Recompilaste la app tras instalarlo? (solo Android)");
@@ -65,6 +65,34 @@ export const MobileMesh = {
     } catch {
       return r;
     }
+  },
+  /**
+   * Cobrar con un ayudante de pagos (examples/ayudante-wompi): crea el pago, abre la pasarela, vuelve
+   * sola a la app al terminar y espera el resultado. Devuelve {referencia, estado}: estado
+   * "APROBADO" | "RECHAZADO" | "ANULADO" | "ERROR", o "PENDIENTE" si en `esperarMin` no se resolvió.
+   * La app no tiene que declarar nada: el regreso lo trae el kit.
+   */
+  pagar: async (producto, { ayudante = "pagos", esperarMin = 10 } = {}) => {
+    if (!(await N.contactos()).includes(ayudante)) await N.anadirPorNombre(ayudante);
+    const volver = `https://juanmanuel767.github.io/mobilemesh/volver/?app=${await N.esquemaDeRegreso()}`;
+    const { referencia, url } = await MobileMesh.llamar(ayudante, "crear_pago", { producto, volver });
+    await Linking.openURL(url);
+    return new Promise((resolve) => {
+      const hasta = Date.now() + esperarMin * 60000;
+      let listo = false;
+      const mirar = async () => {
+        if (listo) return;
+        const { estado } = await MobileMesh.llamar(ayudante, "estado_pago", { referencia }).catch(() => ({ estado: "PENDIENTE" }));
+        if (estado !== "PENDIENTE" || Date.now() > hasta) {
+          listo = true;
+          clearInterval(t);
+          sub.remove();
+          resolve({ referencia, estado });
+        }
+      };
+      const t = setInterval(mirar, 4000);
+      const sub = AppState.addEventListener("change", (e) => e === "active" && mirar());
+    });
   },
   /** Base de datos cifrada en el móvil. */
   guardar: (coleccion, id, campos) => N.guardar(coleccion, id, campos),

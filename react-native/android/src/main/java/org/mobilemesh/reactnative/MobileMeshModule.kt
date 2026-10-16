@@ -243,6 +243,9 @@ class MobileMeshModule(private val ctx: ReactApplicationContext) : ReactContextB
 
     // ---------- Funciones de servidor (ayudantes) ----------
 
+    /** Esquema con el que la página puente vuelve a esta app (el id de la app). */
+    @ReactMethod fun esquemaDeRegreso(p: Promise) = p.resolve(ctx.packageName)
+
     /** Llama a la función de un ayudante (por ejemplo, pagos). `datosJson`: objeto JSON. Responde su resultado. */
     @ReactMethod
     fun llamar(ayudante: String, funcion: String, datosJson: String, p: Promise) {

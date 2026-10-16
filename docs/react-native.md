@@ -41,6 +41,10 @@ if (f) await MobileMesh.enviarArchivo("juan", f.uri, f.nombre);
 const ruta = await MobileMesh.verArchivo(idMensaje);  // file:// para <Image>
 await MobileMesh.guardarEnDescargas(idMensaje);
 
+// Cobrar (con un ayudante de pagos, ver examples/ayudante-wompi): abre la pasarela, vuelve sola a
+// la app y espera el resultado. La app no tiene que declarar nada en Android.
+const { estado } = await MobileMesh.pagar("cafe");   // "APROBADO" | "RECHAZADO" | …
+
 // Base de datos cifrada en el móvil
 await MobileMesh.guardar("tareas", "t1", { titulo: "Comprar pan" });
 console.log(await MobileMesh.datos("tareas"));       // [{id: "t1", campos: {titulo: "Comprar pan"}}]
@@ -55,6 +59,7 @@ minuto después de cada cambio: al formatear, «entrar» o «entrarConCodigo» l
 
 - TECNO KJ5 ⇄ Redmi A5 con la app de ejemplo ChatMesh: cuentas por nombre, solicitudes aceptadas
   solas, mensajes en los dos sentidos (misma wifi y redes distintas), fotos y avisos.
+- Pago con Wompi (modo de pruebas) con `pagar()`: la pasarela aprueba y la app muestra «Pagado».
 - Redmi formateado (datos borrados): recuperados cuenta, contacto y mensajes con contraseña y con
   el código en papel.
 
