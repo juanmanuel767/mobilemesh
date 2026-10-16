@@ -13,9 +13,9 @@
 
 use crate::{Result, Store};
 use serde::{Deserialize, Serialize};
+use crate::tiempo::{SystemTime, UNIX_EPOCH};
 use std::{
     collections::HashMap,
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]

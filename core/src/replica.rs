@@ -222,11 +222,13 @@ pub type Incoming = (String, u64, String, u64, PathBuf);
 
 /// `owner` quiere guardar su copia aquí.
 pub fn on_put(s: &mut Session, store: &Store, me: &Identity, owner: &str, version: u64, meta: String, size: u64) -> Result<Option<Incoming>> {
-    if owner != me.id() && !store.has_consent(owner)? {
+    // Un guardián público guarda la de cualquiera, con menos espacio.
+    let public = owner != me.id() && !store.has_consent(owner)?;
+    if public && !crate::guardian::is_guardian(store)? {
         s.send(&Frame::Bad { id: CHUNK_ID.into(), reason: "no he aceptado guardar copias tuyas".into() })?;
         return Ok(None);
     }
-    if size > files::MAX_SIZE {
+    if size > if public { crate::guardian::MAX_COPIA } else { files::MAX_SIZE } {
         s.send(&Frame::Bad { id: CHUNK_ID.into(), reason: "copia demasiado grande".into() })?;
         return Ok(None);
     }
@@ -275,6 +277,7 @@ fn on_complete(s: &mut Session, store: &Store, (owner, version, meta, size, part
 pub fn on_check(s: &mut Session, store: &Store, owner: &str, nonce: &str) -> Result<()> {
     match store.held(owner)? {
         Some((version, _, _)) => {
+            store.touch_held(owner)?;
             let nonce = B64.decode(nonce).map_err(|_| "número mal codificado")?;
             let proof = proof(&nonce, &store.replica_path(Some(owner))?)?;
             s.send(&Frame::ReplicaProof { version, proof })
@@ -288,6 +291,7 @@ pub fn on_get(s: &mut Session, store: &Store, owner: &str) -> Result<()> {
     let Some((version, meta, size)) = store.held(owner)? else {
         return s.send(&Frame::Bad { id: CHUNK_ID.into(), reason: "no tengo ninguna copia de tu cuenta".into() });
     };
+    store.touch_held(owner)?;
     s.send(&Frame::ReplicaPut { version, meta, size })?;
     let path = store.replica_path(Some(owner))?;
     for index in 0..files::chunk_count(size) {

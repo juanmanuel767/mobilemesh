@@ -95,4 +95,4 @@ Líneas de texto al empezar cada conexión TCP:
 - **Avisos (opcional):** `AVISO <clave pública>` → reto y firma → `<ficha>` (o `-` para quitarla) →
   `OK`. Si el relé se arrancó con `--avisos <programa>`, al llegar una carta a ese buzón ejecuta el
   programa con la ficha como argumento (como mucho uno cada 20 s por buzón). No lleva contenido.
-- Límites: 1024 conexiones, 32 por IP, 16 buzones por IP y 4 llamadas en espera por buzón.
+- Límites: 1024 conexiones (cambiable con `--max`), 1000 por IP, 1000 buzones por IP (con datos móviles muchos teléfonos comparten IP) y 4 llamadas en espera por buzón.

@@ -33,6 +33,10 @@ const USO: &str = "uso:
   mesh <carpeta> dato <colección> <registro> <campo> <valor>
   mesh <carpeta> datos <colección>                  ver una colección
   mesh <carpeta> copia                              crear copia de recuperación (pide contraseña)
+  mesh <carpeta> directorio                         buscar en mis relés relés y guardianes nuevos
+  mesh <carpeta> guardian <ip:puerto> <ruta pública>   ser guardián: guardar códigos y copias cifradas de cualquiera
+  mesh <carpeta> guardar-cuenta <invitación> <usuario> guardar mi código en un guardián (pide contraseña)
+  mesh <carpeta> buscar-cuenta <invitación> <usuario>  teléfono nuevo: recuperar la cuenta desde un guardián
   mesh <carpeta> restaurar <código>                 recuperar la cuenta (pide contraseña)
   mesh <carpeta> vincular-pedir                     dispositivo nuevo: mostrar su solicitud
   mesh <carpeta> vincular-aprobar <solicitud>       principal: aprobarla y mostrar el certificado
@@ -150,8 +154,9 @@ fn run() -> Result<()> {
             let (me, store) = open()?;
             let l = TcpListener::bind(addr)?;
             println!("escuchando en {}", l.local_addr()?);
-            if let Some((relay, secret)) = store.relay()? {
-                let (dir, me) = (dir.to_path_buf(), me.clone());
+            let secret = store.mailbox_secret()?;
+            for relay in store.relays()? {
+                let (dir, me, secret) = (dir.to_path_buf(), me.clone(), secret.clone());
                 println!("y en el relé {relay}");
                 std::thread::spawn(move || {
                     mobilemesh_core::relay::listen(relay, secret, move |stream| {
@@ -271,6 +276,54 @@ fn run() -> Result<()> {
             println!("descifrado y comprobado en {dst}");
         }
         ["copia"] => println!("{}", recovery::export(&Identity::load(dir, &Plain)?, &password()?)?),
+        ["router"] => {
+            let (control, local) = mobilemesh_core::upnp::router()?;
+            println!("router con UPnP: {control} (mi IP local: {local})");
+        }
+        ["directorio"] => {
+            let store = open()?.1;
+            let nuevo = mobilemesh_core::directorio::actualizar(&store)?;
+            println!("{}", if nuevo { "directorio nuevo guardado" } else { "sin cambios" });
+            println!("relés: {:?}", mobilemesh_core::directorio::reles(&store));
+            println!("guardianes: {:?}", mobilemesh_core::directorio::guardianes(&store));
+        }
+        ["guardian", addr, public] => {
+            let (me, store) = open()?;
+            mobilemesh_core::guardian::enable(&store)?;
+            drop(store);
+            let l = TcpListener::bind(addr)?;
+            println!("guardián escuchando en {}", l.local_addr()?);
+            println!("invitación: {}", invite(&me, public));
+            // Cada 6 horas, borrar las copias abandonadas.
+            let (d, m) = (dir.to_path_buf(), me.clone());
+            std::thread::spawn(move || loop {
+                if let Ok(n @ 1..) = Store::open(&d, m.db_key()).and_then(|s| mobilemesh_core::guardian::purge(&s)) {
+                    println!("{n} copia(s) abandonada(s) borrada(s)");
+                }
+                std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
+            });
+            mobilemesh_core::accept_loop(l, dir.to_path_buf(), me, || false, |r| {
+                if let Err(e) = r {
+                    eprintln!("conexión rechazada: {e}");
+                }
+            });
+        }
+        ["guardar-cuenta", inv, user] => {
+            let (me, store) = open()?;
+            let (key, route) = parse_invite(inv)?;
+            mobilemesh_core::guardian::save_account(&store, &me, &route, &key, user, &password()?)?;
+            println!("código de recuperación guardado en el guardián");
+        }
+        ["buscar-cuenta", inv, user] => {
+            if Identity::load(dir, &Plain).is_ok() {
+                return Err("esta carpeta ya tiene una identidad válida; no se reemplaza".into());
+            }
+            let (key, route) = parse_invite(inv)?;
+            let me = mobilemesh_core::guardian::find_account(&dir.with_extension("paso"), &route, &key, user, &password()?)?;
+            me.save(dir, &Plain)?;
+            Store::open(dir, me.db_key())?;
+            println!("cuenta recuperada: {}", me.id());
+        }
         ["restaurar", code] => {
             if Identity::load(dir, &Plain).is_ok() {
                 return Err("esta carpeta ya tiene una identidad válida; no se reemplaza".into());

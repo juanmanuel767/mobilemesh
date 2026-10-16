@@ -3,16 +3,30 @@
 pub mod access;
 pub mod e2e;
 pub mod files;
+pub mod directorio;
 pub mod funciones;
+pub mod guardian;
 pub mod identity;
+pub mod net;
 pub mod recovery;
 pub mod relay;
 pub mod replica;
 pub mod store;
 pub mod sync;
 pub mod transport;
+pub mod upnp;
+/// Reloj: el de std en móvil y PC; en el navegador, el del navegador (std no tiene reloj allí).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use std::time as tiempo;
+#[cfg(target_arch = "wasm32")]
+pub(crate) use web_time as tiempo;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
+pub mod websocket;
+#[cfg(not(target_arch = "wasm32"))]
 mod ffi;
 
+#[cfg(not(target_arch = "wasm32"))]
 uniffi::setup_scaffolding!();
 
 pub use identity::{Identity, Pending};
@@ -22,10 +36,7 @@ use identity::{Sealer, from_hex, from_hex_any, to_hex};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use files::FileMeta;
 use serde::{Deserialize, Serialize};
-use std::{
-    net::TcpStream,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 use transport::{Frame, Session};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -195,7 +206,7 @@ impl Drop for Slot {
 }
 
 /// Atiende una conexión entrante; solo acepta contactos conocidos. Devuelve cuántos mensajes recibió.
-pub fn serve(store: &Store, me: &Identity, stream: TcpStream) -> Result<usize> {
+pub fn serve(store: &Store, me: &Identity, stream: impl net::Conn + 'static) -> Result<usize> {
     let mut s = Session::accept(stream, me)?;
     let peer = to_hex(&s.peer);
     // Se aceptan los contactos y los otros dispositivos de mi propia cuenta. Un ayudante «abierto»
@@ -284,6 +295,8 @@ pub fn serve(store: &Store, me: &Identity, stream: TcpStream) -> Result<usize> {
             Frame::ReplicaCheck { nonce } => replica::on_check(&mut s, store, &peer, &nonce)?,
             Frame::ReplicaGet => replica::on_get(&mut s, store, &peer)?,
             Frame::ReplicaDel => replica::on_delete(&mut s, store, &peer)?,
+            Frame::CuentaPut { id, code } => guardian::on_put(&mut s, store, &peer, &id, &code)?,
+            Frame::CuentaGet { id } => guardian::on_get(&mut s, store, &peer, &id)?,
             Frame::Chunk { id, .. } if rejected.as_ref() == Some(&id) => {}
             Frame::Chunk { id, index, data } => {
                 let Some((fid, meta, part)) = &incoming else { return Err("trozo de archivo inesperado".into()) };
@@ -628,13 +641,17 @@ struct Letter {
     buzon: Option<String>,
 }
 
-/// Parte «relay=host:puerto/buzón» de una ruta: (relé, buzón).
+/// Partes «relay=host:puerto/buzón» de una ruta: (relé, buzón).
+fn relay_parts(route: &str) -> impl Iterator<Item = (String, String)> + '_ {
+    route.split('|').filter_map(|p| p.trim().strip_prefix("relay=")?.rsplit_once('/').map(|(r, b)| (r.into(), b.into())))
+}
+
 fn relay_part(route: &str) -> Option<(String, String)> {
-    route.split('|').find_map(|p| p.trim().strip_prefix("relay=")?.rsplit_once('/').map(|(r, b)| (r.into(), b.into())))
+    relay_parts(route).next()
 }
 
 fn letter(store: &Store, t: &str, me: &Identity, id: &str, kind: usize, body: String) -> Result<String> {
-    let buzon = store.relay_route()?.and_then(|r| r.strip_prefix("relay=").map(String::from));
+    let buzon = store.relay_route()?.and_then(|r| r.split('|').next()?.strip_prefix("relay=").map(String::from));
     let l = Letter { t: t.into(), de: to_hex(&me.public), id: id.into(), kind, body, buzon };
     Ok(B64.encode(serde_json::to_vec(&l)?))
 }
@@ -662,7 +679,8 @@ pub fn send_or_deposit(store: &Store, me: &Identity, peer: &str, route: &str) ->
 /// vez (hace falta la sesión del ratchet con su dispositivo).
 // ponytail: solo texto; los archivos esperan a la entrega directa.
 pub fn deposit_pending(store: &Store, me: &Identity, peer: &str, route: &str) -> Result<usize> {
-    let (Some((relay, mailbox)), Some(device)) = (relay_part(route), store.contact_device(peer)?) else { return Ok(0) };
+    let boxes: Vec<_> = relay_parts(route).collect();
+    let (false, Some(device)) = (boxes.is_empty(), store.contact_device(peer)?) else { return Ok(0) };
     if !e2e::has_session(store, &device)? {
         return Ok(0);
     }
@@ -672,7 +690,16 @@ pub fn deposit_pending(store: &Store, me: &Identity, peer: &str, route: &str) ->
             continue;
         }
         let (kind, ct) = e2e::encrypt(store, &device, &id, &body, None)?;
-        relay::deposit(&relay, &mailbox, &letter(store, "msg", me, &id, kind, ct)?)?;
+        let carta = letter(store, "msg", me, &id, kind, ct)?;
+        // El primer relé que la acepte; si ninguno, el error del último.
+        let mut r = Err("sin relé".into());
+        for (relay, mailbox) in &boxes {
+            r = relay::deposit(relay, mailbox, &carta);
+            if r.is_ok() {
+                break;
+            }
+        }
+        r?;
         store.set_status(peer, true, &id, "en buzón")?;
         n += 1;
     }
@@ -682,16 +709,29 @@ pub fn deposit_pending(store: &Store, me: &Identity, peer: &str, route: &str) ->
 /// Recoge las cartas de mi buzón: guarda los mensajes, deja el acuse de recibo en el buzón de cada
 /// remitente y marca como entregados los míos que ya confirmaron. Devuelve los mensajes nuevos.
 pub fn collect_letters(store: &Store, me: &Identity) -> Result<usize> {
-    let Some((relay, secret)) = store.relay()? else { return Ok(0) };
+    let relays = store.relays()?;
+    if relays.is_empty() {
+        return Ok(0);
+    }
+    let secret = store.mailbox_secret()?;
     store.requeue_stale_letters(6)?;
     let mut new = 0;
     let mut acks: Vec<Ack> = Vec::new();
-    relay::collect(&relay, &secret, |raw| {
-        if let Ok(Some(ack)) = read_letter(store, me, raw, &mut new) {
-            acks.push(ack);
-        }
-        true // se borra siempre: lo ilegible o ajeno no se guarda
-    })?;
+    // De cada relé; falla solo si no responde ninguno.
+    let mut ok = false;
+    let mut last = Ok(0);
+    for relay in &relays {
+        last = relay::collect(relay, &secret, |raw| {
+            if let Ok(Some(ack)) = read_letter(store, me, raw, &mut new) {
+                acks.push(ack);
+            }
+            true // se borra siempre: lo ilegible o ajeno no se guarda
+        });
+        ok |= last.is_ok();
+    }
+    if !ok {
+        last?;
+    }
     for (account, device, id, buzon) in acks {
         let route = store.contacts()?.into_iter().find(|c| c.1 == account).and_then(|c| c.2);
         let target = route.as_deref().and_then(relay_part).or_else(|| buzon.and_then(|b| b.rsplit_once('/').map(|(r, m)| (r.into(), m.into()))));

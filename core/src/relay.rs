@@ -26,21 +26,42 @@
 //!   RECOGER <clave pública>   → RETO → FIRMA → CARTA <ficha> <carta>… FIN; el dueño contesta
 //!                               RECIBIDA <ficha> por cada una y la borra el relé
 //!   AVISO <clave pública>     → RETO → FIRMA → <ficha de avisos o «-» para quitarla> → OK
+//!   DIRECTORIO                → <directorio firmado> | NO
+//!   QUIEN                     → <la IP con la que el relé me ve>
 //!
 //! **Avisos (opcional):** si el relé se arranca con un programa de avisos (p. ej. el que avisa por
 //! Firebase), al llegar una carta a un buzón con ficha de avisos lo ejecuta con la ficha como
 //! argumento. El aviso no lleva contenido: solo despierta al teléfono para que recoja su buzón.
 
+/// Relés que usa toda app que no elija los suyos: así funciona entre redes distintas sin
+/// configurar nada. Se prueban en orden y el buzón se registra en todos.
+// ponytail: lista fija en el programa; un directorio de relés que se actualice solo si crece mucho.
+// El primero es el nubia de casa (app «Relé MobileMesh»); cambiar la IP por un nombre de DuckDNS
+// cuando exista, porque la de casa puede cambiar.
+pub const UNIVERSALES: &[&str] = &["181.60.197.125:7900"];
+
+/// Los 2 relés de `all` que usa el buzón con este secreto: cada teléfono usa solo 2, así la carga se
+/// reparte entre todos los de la lista.
+pub fn choose(all: &[&str], secret: &str) -> Vec<String> {
+    let h = Sha256::digest(secret.as_bytes());
+    let start = (u64::from_le_bytes(h[..8].try_into().unwrap_or_default()) % all.len().max(1) as u64) as usize;
+    (0..all.len().min(2)).map(|i| all[(start + i) % all.len()].to_string()).collect()
+}
+
+/// Valor del ajuste «rele» que significa «ningún relé, ni los universales».
+pub const SIN_RELE: &str = "ninguno";
+
 use crate::{
     Result,
+    net::Conn,
     identity::{from_hex, from_hex_any, to_hex},
 };
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
-    io::{self, Read, Write},
-    net::{IpAddr, Shutdown, TcpListener, TcpStream, ToSocketAddrs},
+    io::{Read, Write},
+    net::{IpAddr, Shutdown, TcpListener, TcpStream},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -57,8 +78,9 @@ const IDLE: Duration = Duration::from_secs(300);
 const CONTEXT: &[u8] = b"mobilemesh-buzon-v1";
 // ponytail: límites fijos; hacerlos configurables cuando haya relés públicos con mucha gente.
 const MAX_CONNECTIONS: usize = 1024;
-const MAX_PER_IP: usize = 32;
-const MAX_BOXES_PER_IP: usize = 16;
+// Altos a propósito: con datos móviles cientos de teléfonos salen por la misma IP de la operadora.
+const MAX_PER_IP: usize = 1000;
+const MAX_BOXES_PER_IP: usize = 1000;
 const MAX_PENDING: usize = 256;
 const MAX_PENDING_PER_BOX: usize = 4;
 /// Cartas: tamaño máximo, cuántas por buzón, total en memoria y cuánto se guardan.
@@ -70,11 +92,11 @@ const LETTER_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
 const NOTIFY_EVERY: Duration = Duration::from_secs(20);
 
 /// Lee una línea sin leer de más (lo que venga detrás es tráfico Noise del otro lado).
-pub fn read_line(s: &mut TcpStream) -> Result<String> {
+pub fn read_line(s: &mut impl Read) -> Result<String> {
     read_line_max(s, 200)
 }
 
-fn read_line_max(s: &mut TcpStream, max: usize) -> Result<String> {
+fn read_line_max(s: &mut impl Read, max: usize) -> Result<String> {
     let mut line = Vec::new();
     let mut b = [0u8; 1];
     while line.len() < max {
@@ -142,6 +164,15 @@ pub struct Relay {
     pub forwarded: Arc<AtomicU64>,
     /// Programa que se ejecuta con la ficha de avisos al llegar una carta (opcional).
     pub notifier: Option<String>,
+    /// Velocidad máxima, sumando todas las conexiones empalmadas (bytes por segundo), para que el
+    /// relé no deje sin internet la casa donde está. `None`: sin límite.
+    pub limite: Option<u64>,
+    ventana: Arc<Mutex<Option<(std::time::Instant, u64)>>>,
+    /// Archivo con el directorio firmado que se entrega a quien lo pida (opcional).
+    pub directorio: Option<String>,
+    /// Conexiones a la vez (por defecto `MAX_CONNECTIONS`). Más necesita más archivos abiertos
+    /// (`ulimit -n`): dos por cada llamada empalmada.
+    pub max: Option<usize>,
 }
 
 impl Relay {
@@ -157,7 +188,7 @@ impl Relay {
                 let mut st = self.lock();
                 let total: usize = st.conns.values().sum();
                 let mine = st.conns.get(&ip).copied().unwrap_or(0);
-                if total >= MAX_CONNECTIONS || mine >= MAX_PER_IP {
+                if total >= self.max.unwrap_or(MAX_CONNECTIONS) || mine >= MAX_PER_IP {
                     continue; // se cierra sin contestar
                 }
                 st.conns.insert(ip, mine + 1);
@@ -187,6 +218,17 @@ impl Relay {
             "RECOGER" => self.hand_over(s, arg),
             "AVISO" => self.set_push(s, arg),
             "MARCAR" => self.dial_box(s, arg),
+            // Como STUN: «¿con qué IP me ves?» (la pública de mi router o de mi operadora).
+            "QUIEN" => {
+                writeln!(s, "{ip}")?;
+                Ok(())
+            }
+            "DIRECTORIO" => {
+                let d = self.directorio.as_ref().and_then(|f| std::fs::read_to_string(f).ok());
+                let line = d.as_deref().map(str::trim).filter(|d| !d.is_empty() && d.len() < 8192).unwrap_or("NO");
+                writeln!(s, "{line}")?;
+                Ok(())
+            }
             "ACEPTAR" => {
                 let caller = self.lock().pending.remove(arg);
                 let Some((_, mut caller)) = caller else { return Ok(()) };
@@ -353,10 +395,15 @@ impl Relay {
         for s in [&a, &b] {
             let _ = s.set_read_timeout(Some(IDLE));
         }
+        let (limite, ventana) = (self.limite, self.ventana.clone());
         let pipe = |mut from: TcpStream, mut to: TcpStream, count: Arc<AtomicU64>| {
+            let ventana = ventana.clone();
             thread::spawn(move || {
                 let mut buf = [0u8; 16 * 1024];
                 while let Ok(n @ 1..) = from.read(&mut buf) {
+                    if let Some(l) = limite {
+                        frenar(&ventana, l, n as u64);
+                    }
                     if to.write_all(&buf[..n]).is_err() {
                         break;
                     }
@@ -374,10 +421,50 @@ impl Relay {
     }
 }
 
+/// Reparte `limite` bytes por segundo entre todas las conexiones: si ya se gastó lo de este
+/// segundo, espera al siguiente. Un trozo siempre pasa (aunque sea mayor que el límite).
+fn frenar(ventana: &Mutex<Option<(std::time::Instant, u64)>>, limite: u64, n: u64) {
+    loop {
+        let espera = {
+            let mut v = ventana.lock().unwrap_or_else(|e| e.into_inner());
+            let (inicio, usados) = v.get_or_insert((std::time::Instant::now(), 0));
+            if inicio.elapsed() >= Duration::from_secs(1) {
+                *inicio = std::time::Instant::now();
+                *usados = 0;
+            }
+            if *usados == 0 || *usados + n <= limite {
+                *usados += n;
+                return;
+            }
+            Duration::from_secs(1).saturating_sub(inicio.elapsed())
+        };
+        thread::sleep(espera);
+    }
+}
+
+/// Mi IP pública tal como la ve el relé.
+pub fn public_ip(relay: &str) -> Result<String> {
+    let mut s = crate::net::connect(relay, WAIT)?;
+    s.set_read_timeout(Some(WAIT))?;
+    writeln!(s, "QUIEN")?;
+    let ip: IpAddr = read_line(&mut s)?.parse().map_err(|_| "el relé no dio una IP")?;
+    Ok(ip.to_string())
+}
+
+/// Pide al relé el directorio firmado que sirve (la firma se comprueba fuera).
+pub fn directory(relay: &str) -> Result<String> {
+    let mut s = crate::net::connect(relay, WAIT)?;
+    s.set_read_timeout(Some(WAIT))?;
+    writeln!(s, "DIRECTORIO")?;
+    match read_line_max(&mut s, 8192)?.as_str() {
+        "NO" => Err("el relé no tiene directorio".into()),
+        l => Ok(l.to_string()),
+    }
+}
+
 /// Llama al buzón `id` a través del relé. Devuelve la conexión ya empalmada con su dueño.
-pub fn dial(relay: &str, id: &str) -> Result<TcpStream> {
-    let addr = relay.to_socket_addrs()?.next().ok_or("dirección del relé no válida")?;
-    let mut s = TcpStream::connect_timeout(&addr, WAIT)?;
+pub fn dial(relay: &str, id: &str) -> Result<crate::net::Stream> {
+    let mut s = crate::net::connect(relay, WAIT)?;
     s.set_read_timeout(Some(WAIT + Duration::from_secs(2)))?;
     writeln!(s, "MARCAR {id}")?;
     match read_line(&mut s)?.as_str() {
@@ -391,8 +478,7 @@ pub fn deposit(relay: &str, id: &str, letter: &str) -> Result<()> {
     if letter.len() > MAX_LETTER {
         return Err("carta demasiado grande".into());
     }
-    let addr = relay.to_socket_addrs()?.next().ok_or("dirección del relé no válida")?;
-    let mut s = TcpStream::connect_timeout(&addr, WAIT)?;
+    let mut s = crate::net::connect(relay, WAIT)?;
     s.set_read_timeout(Some(WAIT))?;
     writeln!(s, "DEPOSITAR {id} {letter}")?;
     match read_line(&mut s)?.as_str() {
@@ -404,8 +490,7 @@ pub fn deposit(relay: &str, id: &str, letter: &str) -> Result<()> {
 /// Guarda en el relé la ficha de avisos (p. ej. de Firebase) del buzón de `secret`, o la quita con `None`.
 pub fn set_push_token(relay: &str, secret: &str, token: Option<&str>) -> Result<()> {
     let key = mailbox_key(secret);
-    let addr = relay.to_socket_addrs()?.next().ok_or("dirección del relé no válida")?;
-    let mut s = TcpStream::connect_timeout(&addr, WAIT)?;
+    let mut s = crate::net::connect(relay, WAIT)?;
     s.set_read_timeout(Some(WAIT))?;
     writeln!(s, "AVISO {}", to_hex(&key.verifying_key().to_bytes()))?;
     let challenge = read_line(&mut s)?;
@@ -422,8 +507,7 @@ pub fn set_push_token(relay: &str, secret: &str, token: Option<&str>) -> Result<
 /// Devuelve cuántas había.
 pub fn collect(relay: &str, secret: &str, mut handle: impl FnMut(&str) -> bool) -> Result<usize> {
     let key = mailbox_key(secret);
-    let addr = relay.to_socket_addrs()?.next().ok_or("dirección del relé no válida")?;
-    let mut s = TcpStream::connect_timeout(&addr, WAIT)?;
+    let mut s = crate::net::connect(relay, WAIT)?;
     s.set_read_timeout(Some(WAIT))?;
     writeln!(s, "RECOGER {}", to_hex(&key.verifying_key().to_bytes()))?;
     let challenge = read_line(&mut s)?;
@@ -445,27 +529,40 @@ pub fn collect(relay: &str, secret: &str, mut handle: impl FnMut(&str) -> bool) 
     Ok(n)
 }
 
+/// Registra el buzón de `secret` en el relé. Devuelve la conexión de control, por la que llegan
+/// las líneas «LLAMADA <ficha>».
+pub fn register(relay: &str, secret: &str) -> Result<crate::net::Stream> {
+    let key = mailbox_key(secret);
+    let mut control = crate::net::connect(relay, WAIT)?;
+    control.set_read_timeout(Some(WAIT))?;
+    writeln!(control, "REGISTRAR {}", to_hex(&key.verifying_key().to_bytes()))?;
+    let challenge = read_line(&mut control)?;
+    let nonce = from_hex_any(challenge.strip_prefix("RETO ").ok_or("el relé no mandó el reto")?)?;
+    writeln!(control, "FIRMA {}", to_hex(&key.sign(&[CONTEXT, &nonce].concat()).to_bytes()))?;
+    if !read_line(&mut control)?.starts_with("OK ") {
+        return Err("el relé no aceptó el buzón".into());
+    }
+    Ok(control)
+}
+
+/// Contesta la llamada `token`: devuelve la conexión ya empalmada con quien llama.
+pub fn answer(relay: &str, token: &str) -> Result<crate::net::Stream> {
+    let mut s = crate::net::connect(relay, WAIT)?;
+    writeln!(s, "ACEPTAR {token}")?;
+    Ok(s)
+}
+
 /// Mantiene el buzón registrado en el relé y entrega cada llamada a `on_call`.
 /// Si se cae, vuelve a conectar (esperando cada vez más, hasta 1 minuto). Nunca termina.
-pub fn listen(relay: String, secret: String, on_call: impl Fn(TcpStream) + Send + Sync + 'static) {
+pub fn listen(relay: String, secret: String, on_call: impl Fn(crate::net::Stream) + Send + Sync + 'static) {
     let on_call = Arc::new(on_call);
-    let key = mailbox_key(&secret);
     let mut pause = Duration::from_secs(2);
     loop {
         let session = (|| -> Result<()> {
-            let addr = relay.to_socket_addrs()?.next().ok_or("dirección del relé no válida")?;
-            let mut control = TcpStream::connect_timeout(&addr, WAIT)?;
-            control.set_read_timeout(Some(WAIT))?;
-            writeln!(control, "REGISTRAR {}", to_hex(&key.verifying_key().to_bytes()))?;
-            let challenge = read_line(&mut control)?;
-            let nonce = from_hex_any(challenge.strip_prefix("RETO ").ok_or("el relé no mandó el reto")?)?;
-            writeln!(control, "FIRMA {}", to_hex(&key.sign(&[CONTEXT, &nonce].concat()).to_bytes()))?;
-            if !read_line(&mut control)?.starts_with("OK ") {
-                return Err("el relé no aceptó el buzón".into());
-            }
+            let mut control = register(&relay, &secret)?;
             pause = Duration::from_secs(2);
             // Un «PING» de vez en cuando mantiene abierta la conexión en routers y redes móviles.
-            let mut ping = control.try_clone()?;
+            let mut ping = control.try_clone_conn()?;
             thread::spawn(move || {
                 while writeln!(ping, "PING").is_ok() {
                     thread::sleep(Duration::from_secs(25));
@@ -477,13 +574,7 @@ pub fn listen(relay: String, secret: String, on_call: impl Fn(TcpStream) + Send 
                 let Some(token) = line.strip_prefix("LLAMADA ") else { continue };
                 let (relay, token, on_call) = (relay.clone(), token.to_string(), on_call.clone());
                 thread::spawn(move || {
-                    let answer = || -> io::Result<TcpStream> {
-                        let addr = relay.to_socket_addrs()?.next().ok_or(io::ErrorKind::InvalidInput)?;
-                        let mut s = TcpStream::connect_timeout(&addr, WAIT)?;
-                        writeln!(s, "ACEPTAR {token}")?;
-                        Ok(s)
-                    };
-                    if let Ok(s) = answer() {
+                    if let Ok(s) = answer(&relay, &token) {
                         on_call(s);
                     }
                 });
@@ -492,5 +583,20 @@ pub fn listen(relay: String, secret: String, on_call: impl Fn(TcpStream) + Send 
         let _ = session;
         thread::sleep(pause);
         pause = (pause * 2).min(Duration::from_secs(60));
+    }
+}
+
+#[cfg(test)]
+mod pruebas {
+    #[test]
+    fn el_limite_de_velocidad_frena_a_todos_juntos() {
+        let ventana = std::sync::Mutex::new(None);
+        let t = std::time::Instant::now();
+        // 64 KB/s y 4 trozos de 32 KB → al menos 1 s de espera.
+        for _ in 0..4 {
+            super::frenar(&ventana, 64 * 1024, 32 * 1024);
+        }
+        assert!(t.elapsed() >= std::time::Duration::from_millis(900), "{:?}", t.elapsed());
+        assert!(t.elapsed() < std::time::Duration::from_secs(3));
     }
 }

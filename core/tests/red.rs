@@ -1013,6 +1013,49 @@ fn mensaje_para_quien_duerme_espera_en_el_buzon_y_vuelve_el_acuse() {
 }
 
 #[test]
+fn con_varios_reles_si_uno_cae_se_usa_el_siguiente() {
+    let (alice, bob) = (device("alice21"), device("bob21"));
+    let (vivo, _) = start_relay();
+    // El primero no responde (nadie escucha en el puerto 9).
+    let lista = format!("127.0.0.1:9|{vivo}");
+    for d in [&alice, &bob] {
+        st(&d.0).set_setting("rele", Some(&lista)).unwrap();
+    }
+    let route_of = |d: &(PathBuf, Identity)| format!("127.0.0.1:9|{}", st(&d.0).relay_route().unwrap().unwrap());
+    assert_eq!(route_of(&bob).matches("relay=").count(), 2, "la invitación lleva los dos relés");
+    st(&alice.0).add_contact("bob", &bob.1.id(), Some(&route_of(&bob))).unwrap();
+    st(&bob.0).add_contact("alice", &alice.1.id(), Some(&route_of(&alice))).unwrap();
+    assert_eq!(send_one(&alice, &bob, &alice.1, "hola"), Ok(1));
+    assert_eq!(send_one(&bob, &alice, &bob.1, "hola alice"), Ok(1));
+
+    let store = st(&alice.0);
+    store.queue(&bob.1.id(), "por el segundo").unwrap();
+    let sent = mobilemesh_core::send_or_deposit(&store, &alice.1, &bob.1.id(), &route_of(&bob)).unwrap();
+    assert_eq!(sent, mobilemesh_core::Sent::Deposited(1));
+    assert_eq!(mobilemesh_core::collect_letters(&st(&bob.0), &bob.1).unwrap(), 1, "recoge aunque el primero esté caído");
+
+    // 1000 teléfonos y 10 relés: cada teléfono usa 2 distintos y ningún relé carga con todos.
+    let lista: Vec<String> = (0..10).map(|i| format!("10.0.0.{i}:7900")).collect();
+    let lista: Vec<&str> = lista.iter().map(String::as_str).collect();
+    let mut carga = std::collections::HashMap::new();
+    for n in 0..1000 {
+        let mios = mobilemesh_core::relay::choose(&lista, &format!("secreto{n}"));
+        assert!(mios.len() == 2 && mios[0] != mios[1]);
+        for r in mios {
+            *carga.entry(r).or_insert(0) += 1;
+        }
+    }
+    assert_eq!(carga.len(), 10);
+    assert!(carga.values().all(|&c| (120..=280).contains(&c)), "reparto desigual: {carga:?}");
+
+    // Sin elegir nada se usan los universales; «ninguno» los quita.
+    let carol = device("carol21");
+    assert_eq!(st(&carol.0).relays().unwrap(), mobilemesh_core::relay::UNIVERSALES);
+    st(&carol.0).set_setting("rele", Some(mobilemesh_core::relay::SIN_RELE)).unwrap();
+    assert!(st(&carol.0).relay_route().unwrap().is_none());
+}
+
+#[test]
 fn el_rele_avisa_sin_contenido_a_quien_tiene_ficha_de_avisos() {
     let dir = std::env::temp_dir().join(format!("mm-avisos-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -1151,4 +1194,178 @@ fn ayudante_atiende_llamadas_de_cualquiera_y_responde() {
     st(&stranger.0).add_contact("x", &other.1.id(), Some(&addr)).unwrap();
     assert!(funciones::call(&st(&stranger.0), &stranger.1, &other.1.id(), &addr, "f", "{}", "127.0.0.1:9").is_err());
     assert!(h.join().unwrap().is_err());
+}
+
+// ---------- Guardián: recuperar cuenta y datos tras perder el teléfono ----------
+
+#[test]
+fn guardian_recupera_cuenta_y_datos_con_usuario_y_contrasena() {
+    use mobilemesh_core::guardian;
+    let (alice, _bob) = alice_with_data("guardian");
+    let g = device("guardian");
+    guardian::enable(&st(&g.0)).unwrap();
+    let pass = "una contraseña muy larga";
+
+    // Alice guarda su código y su copia en el guardián (sin que la conozca de antes).
+    let (addr, h) = listen_once(g.0.clone());
+    guardian::save_account(&st(&alice.0), &alice.1, &addr, &g.1.id(), "Alice", pass).unwrap();
+    h.join().unwrap().unwrap();
+    replica::snapshot(&st(&alice.0), &alice.1).unwrap();
+    with_holder(&alice, &g, &alice.1, &alice.0, |s, h| replica::push(s, &alice.1, h)).unwrap();
+    assert!(st(&g.0).held(&alice.1.id()).unwrap().is_some(), "el guardián guarda la copia");
+
+    // Contraseña equivocada: no hay nada.
+    let tmp = alice.0.with_extension("paso");
+    let (addr, h) = listen_once(g.0.clone());
+    let err = guardian::find_account(&tmp, &addr, &g.1.id(), "alice", "otra contraseña larga").err().unwrap().to_string();
+    assert!(err.contains("incorrectos"), "{err}");
+    let _ = h.join();
+
+    // Otra cuenta no puede reemplazar el código de Alice aunque adivine usuario y contraseña.
+    let mallory = device("mallory-guardian");
+    let (addr, h) = listen_once(g.0.clone());
+    assert!(guardian::save_account(&st(&mallory.0), &mallory.1, &addr, &g.1.id(), "alice", pass).is_err());
+    let _ = h.join();
+
+    // Alice pierde el teléfono: en uno nuevo, con usuario (en mayúsculas o no) y contraseña.
+    let (addr, h) = listen_once(g.0.clone());
+    let me = guardian::find_account(&tmp, &addr, &g.1.id(), " alice ", pass).unwrap();
+    let _ = h.join();
+    assert_eq!(me.id(), alice.1.id());
+    let nuevo = alice.0.with_extension("nuevo-g");
+    let _ = std::fs::remove_dir_all(&nuevo);
+    me.save(&nuevo, &Plain).unwrap();
+    let got = with_holder(&alice, &g, &me, &nuevo, |s, h| replica::restore(s, &me, h)).unwrap();
+    assert_eq!((got.contacts, got.messages), (1, 1));
+    assert_eq!(statuses(&nuevo), ["entregado:mensaje-secreto-para-bob"]);
+
+    // El guardián no puede leer nada de lo que guarda.
+    for f in std::fs::read_dir(g.0.join("copias")).unwrap() {
+        let raw = std::fs::read(f.unwrap().path()).unwrap();
+        assert!(!raw.windows(20).any(|w| w == b"perfil-secreto-alice" || w == b"mensaje-secreto-para"));
+    }
+    // Contraseña corta: ni se intenta.
+    assert!(guardian::locator("alice", "corta").is_err());
+}
+
+// ---------- Directorio firmado de relés y guardianes ----------
+
+#[test]
+fn el_directorio_firmado_llega_por_el_rele_y_no_se_puede_falsificar() {
+    use mobilemesh_core::directorio::{Directorio, descargar_con, firmar, verificar};
+    let secreto = [7u8; 32];
+    let clave: String = ed25519_dalek::SigningKey::from_bytes(&secreto).verifying_key().to_bytes().iter().map(|b| format!("{b:02x}")).collect();
+    let d = Directorio { v: 3, reles: vec!["10.0.0.1:7900".into(), "10.0.0.2:7900".into()], guardianes: vec!["mobilemesh:2:ab:10.0.0.1:7954".into()] };
+    let linea = firmar(&d, &secreto).unwrap();
+    assert_eq!(verificar(&linea, &clave).unwrap(), d);
+
+    // Un relé sirve el archivo; otro relé sirve uno falsificado (firmado con otra clave).
+    let dir = std::env::temp_dir().join(format!("mm-dir-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let serve = |contenido: &str, nombre: &str| {
+        let f = dir.join(nombre);
+        std::fs::write(&f, contenido).unwrap();
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap().to_string();
+        let mut r = mobilemesh_core::relay::Relay::default();
+        r.directorio = Some(f.display().to_string());
+        thread::spawn(move || r.serve(l));
+        addr
+    };
+    let falso = firmar(&Directorio { v: 99, reles: vec!["6.6.6.6:7900".into()], ..Default::default() }, &[9u8; 32]).unwrap();
+    let malo = serve(&falso, "falso.txt");
+    let bueno = serve(&linea, "bueno.txt");
+    let sin = { let l = TcpListener::bind("127.0.0.1:0").unwrap(); let a = l.local_addr().unwrap().to_string(); thread::spawn(move || mobilemesh_core::relay::Relay::default().serve(l)); a };
+
+    // Se ignora el falso (aunque tenga versión mayor) y el relé sin directorio.
+    let (got, _) = descargar_con(&[malo, sin.clone(), bueno], &clave).unwrap();
+    assert_eq!(got, d);
+    assert!(descargar_con(&[sin], &clave).is_none());
+
+    // Cambiar un byte rompe la firma.
+    let mut roto = linea.clone().into_bytes();
+    roto[5] ^= 1;
+    assert!(verificar(&String::from_utf8(roto).unwrap(), &clave).is_err());
+}
+
+#[test]
+fn el_guardian_borra_las_copias_abandonadas_pero_no_las_de_amigos() {
+    use mobilemesh_core::guardian;
+    let (alice, bob) = alice_with_data("caduca");
+    let g = device("guardian-caduca");
+    guardian::enable(&st(&g.0)).unwrap();
+    // Alice deja su copia en el guardián (sin ser amigos) y Bob en él como amigo.
+    replica::snapshot(&st(&alice.0), &alice.1).unwrap();
+    with_holder(&alice, &g, &alice.1, &alice.0, |s, h| replica::push(s, &alice.1, h)).unwrap();
+    st(&g.0).add_contact("bob", &bob.1.id(), None).unwrap();
+    st(&g.0).set_consent(&bob.1.id(), true).unwrap();
+    replica::snapshot(&st(&bob.0), &bob.1).unwrap();
+    with_holder(&bob, &g, &bob.1, &bob.0, |s, h| replica::push(s, &bob.1, h)).unwrap();
+
+    // Recién comprobadas: nada que borrar.
+    assert_eq!(guardian::purge(&st(&g.0)).unwrap(), 0);
+    // Como si hubieran pasado los 90 días: se borra la de Alice, la de Bob (amigo) se queda.
+    let futuro = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 + 10;
+    assert_eq!(guardian::purge_before(&st(&g.0), futuro).unwrap(), 1);
+    assert!(st(&g.0).held(&alice.1.id()).unwrap().is_none());
+    assert!(st(&g.0).held(&bob.1.id()).unwrap().is_some());
+}
+
+#[test]
+fn entrega_directa_por_ipv6() {
+    let (alice, bob) = (device("alice-v6"), device("bob-v6"));
+    befriend(&alice, "alice", &bob, "bob");
+    let Ok(l) = TcpListener::bind("[::1]:0") else { return }; // equipo sin IPv6: nada que probar
+    let addr = l.local_addr().unwrap().to_string();
+    let dir = bob.0.clone();
+    let h = thread::spawn(move || serve(&st(&dir), &Identity::load(&dir, &Plain).unwrap(), l.accept().unwrap().0).map_err(|e| e.to_string()));
+    let store = st(&alice.0);
+    store.queue(&bob.1.id(), "hola por ipv6").unwrap();
+    // Ruta con una IPv4 de otra red (se salta) y la IPv6.
+    assert_eq!(deliver(&store, &alice.1, &bob.1.id(), &format!("10.255.255.1:9|{addr}")).unwrap(), 1);
+    assert_eq!(h.join().unwrap(), Ok(1));
+}
+
+#[test]
+fn el_rele_dice_con_que_ip_me_ve() {
+    let (relay, _) = start_relay();
+    assert_eq!(mobilemesh_core::relay::public_ip(&relay).unwrap(), "127.0.0.1");
+}
+
+#[test]
+fn un_navegador_habla_con_el_rele_por_websocket() {
+    let (relay, _) = start_relay();
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let ws = l.local_addr().unwrap();
+    let relay_addr: std::net::SocketAddr = relay.parse().unwrap();
+    thread::spawn(move || mobilemesh_core::websocket::serve(l, relay_addr));
+
+    // Cliente WebSocket mínimo, como un navegador.
+    let mut s = TcpStream::connect(ws).unwrap();
+    s.write_all(b"GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").unwrap();
+    let mut resp = Vec::new();
+    let mut b = [0u8; 1];
+    while !resp.ends_with(b"\r\n\r\n") {
+        s.read_exact(&mut b).unwrap();
+        resp.push(b[0]);
+    }
+    let resp = String::from_utf8(resp).unwrap();
+    assert!(resp.starts_with("HTTP/1.1 101") && resp.contains("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="), "{resp}");
+    // «QUIEN\n» enmascarado, como manda el estándar.
+    let mask = [1u8, 2, 3, 4];
+    let mut frame = vec![0x82, 0x80 | 6];
+    frame.extend(mask);
+    frame.extend(b"QUIEN\n".iter().enumerate().map(|(i, c)| c ^ mask[i % 4]));
+    s.write_all(&frame).unwrap();
+    // La respuesta puede llegar en varios mensajes: se juntan hasta el salto de línea.
+    let mut data = Vec::new();
+    while !data.ends_with(b"\n") {
+        let mut h = [0u8; 2];
+        s.read_exact(&mut h).unwrap();
+        assert_eq!(h[0], 0x82, "mensaje binario");
+        let mut part = vec![0u8; (h[1] & 0x7f) as usize];
+        s.read_exact(&mut part).unwrap();
+        data.extend(part);
+    }
+    assert_eq!(String::from_utf8(data).unwrap(), "127.0.0.1\n");
 }

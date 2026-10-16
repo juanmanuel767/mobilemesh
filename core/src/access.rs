@@ -13,10 +13,11 @@ use crate::{
 };
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
+use crate::tiempo::Instant;
 use std::{
     collections::{HashMap, VecDeque},
     sync::Mutex,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 const CONTEXT: &[u8] = b"mobilemesh-retirados-v1";

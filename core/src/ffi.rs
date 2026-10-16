@@ -21,6 +21,8 @@ use std::{
 /// Modo sin conexión: no se envía, no se sincroniza y no se aceptan conexiones; todo queda en local.
 static OFFLINE: AtomicBool = AtomicBool::new(false);
 static BACKGROUND: AtomicBool = AtomicBool::new(false);
+/// Mi ruta pública directa si el router de casa abrió el puerto por UPnP.
+static PUBLIC: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 #[derive(Debug, uniffi::Error)]
 pub enum MeshError {
@@ -225,6 +227,24 @@ pub fn parse_invite(text: String) -> R<Invite> {
     Ok(Invite { key, addr })
 }
 
+/// Nombre con el que aparece el guardián universal entre los contactos.
+const GUARDIAN: &str = "guardián";
+
+/// Guardián universal: el primero del directorio (o de la lista fija, en un teléfono nuevo sin
+/// directorio, después de intentar descargarlo de los relés universales).
+fn universal_guardian(store: Option<&Store>) -> R<(String, String)> {
+    let list = match store {
+        Some(s) => crate::directorio::guardianes(s),
+        None => {
+            let fijos: Vec<String> = crate::relay::UNIVERSALES.iter().map(|r| r.to_string()).collect();
+            crate::directorio::descargar(&fijos).map(|(d, _)| d.guardianes).filter(|g| !g.is_empty())
+                .unwrap_or_else(|| crate::guardian::UNIVERSALES.iter().map(|g| g.to_string()).collect())
+        }
+    };
+    let inv = list.first().ok_or_else(|| fail("no hay ningún guardián configurado"))?;
+    Ok(crate::parse_invite(inv)?)
+}
+
 /// Un dispositivo MobileMesh. Cada llamada abre su propia conexión a SQLite, así nada se bloquea entre hilos.
 #[derive(uniffi::Object)]
 pub struct Mesh {
@@ -290,8 +310,41 @@ impl Mesh {
         Self::ready(dir, me)
     }
 
+    /// Recupera la cuenta desde un guardián con usuario y contraseña (teléfono perdido). Después,
+    /// `use_guardian` + `restore_copy(GUARDIAN)` traen los datos.
+    #[uniffi::constructor]
+    pub fn recover_from_guardian(dir: String, guard: Arc<dyn KeyGuard>, user: String, pass: String) -> R<Arc<Self>> {
+        let (dir, guard) = (PathBuf::from(dir), Guard(guard));
+        if Identity::load(&dir, &guard).is_ok() {
+            return Err(fail("este dispositivo ya tiene una identidad válida; no se reemplaza"));
+        }
+        let (key, route) = universal_guardian(None)?;
+        let me = crate::guardian::find_account(&dir.with_extension("paso"), &route, &key, &user, &pass)?;
+        me.save(&dir, &guard)?;
+        Self::ready(dir, me)
+    }
+
     pub fn id(&self) -> String {
         self.me.id()
+    }
+
+    /// Añade el guardián universal como contacto y como guardián de mi copia (desde ahora
+    /// `backup_now` también le envía la copia). Devuelve su nombre.
+    pub fn use_guardian(&self) -> R<String> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        let (key, route) = universal_guardian(Some(&store))?;
+        if store.contact_key(GUARDIAN)?.is_none() {
+            store.add_contact(GUARDIAN, &key, Some(&route))?;
+        }
+        self.holder(&store, GUARDIAN)?;
+        Ok(GUARDIAN.into())
+    }
+
+    /// Guarda en el guardián mi código de recuperación, para recuperarlo con usuario + contraseña.
+    pub fn save_account_in_guardian(&self, user: String, pass: String) -> R<()> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        let (key, route) = universal_guardian(Some(&store))?;
+        Ok(crate::guardian::save_account(&store, &self.me, &route, &key, &user, &pass)?)
     }
 
     /// Código corto de este dispositivo.
@@ -322,7 +375,8 @@ impl Mesh {
         Ok(crate::invite(&self.me, &route))
     }
 
-    /// Usa (o deja de usar, con `None`) un relé «host:puerto». Se aplica al reiniciar la app.
+    /// Usa sus propios relés «host:puerto» (varios separados por «|») en vez de los universales, o
+    /// ninguno con `None`. Se aplica al reiniciar la app.
     // ponytail: el relé se lee al arrancar; cambiarlo en caliente si hace falta.
     pub fn set_relay(&self, relay: Option<String>) -> R<()> {
         let relay = relay.map(|r| r.trim().to_string()).filter(|r| !r.is_empty());
@@ -330,10 +384,7 @@ impl Mesh {
             crate::transport::check_route(r)?;
         }
         let store = Store::open(&self.dir, self.me.db_key())?;
-        store.set_setting("rele", relay.as_deref())?;
-        if relay.is_some() {
-            store.relay()?; // crea el secreto del buzón
-        }
+        store.set_setting("rele", Some(relay.as_deref().unwrap_or(crate::relay::SIN_RELE)))?;
         Ok(())
     }
 
@@ -344,6 +395,11 @@ impl Mesh {
         let store = Store::open(&self.dir, self.me.db_key())?;
         let (relay, secret) = store.relay()?.ok_or_else(|| fail("los avisos necesitan un relé: configura uno primero"))?;
         Ok(crate::relay::set_push_token(&relay, &secret, token.as_deref())?)
+    }
+
+    /// Mi ruta pública directa («ip:puerto») si el router abrió el puerto por UPnP.
+    pub fn public_route(&self) -> Option<String> {
+        PUBLIC.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn relay_info(&self) -> R<Option<String>> {
@@ -663,6 +719,7 @@ impl Mesh {
         }
         let (dir, me) = (self.dir.clone(), self.me.clone());
         let mut last_collect = Instant::now() - Duration::from_secs(3600);
+        let mut last_check = Instant::now();
         let every = Duration::from_secs(seconds.max(1) as u64);
         thread::spawn(move || {
             let mut wait: HashMap<String, (Instant, u32)> = HashMap::new(); // dirección → (no antes de, fallos)
@@ -691,6 +748,14 @@ impl Mesh {
                     .into_iter()
                     .filter_map(|(_, key, addr)| Some((Some(key), addr?)))
                     .chain(devices.into_iter().map(|(_, addr)| (None, addr)));
+                // Una vez al día, comprobar mis copias: detecta las dañadas y avisa a los guardianes
+                // de que siguen vivas (si no, las borran a los 90 días).
+                if last_check.elapsed() > Duration::from_secs(86_400) {
+                    last_check = Instant::now();
+                    for h in store.holders().unwrap_or_default().iter().filter(|h| h.status != "borrando") {
+                        let _ = crate::replica::check(&store, &me, h); // ya apunta el estado
+                    }
+                }
                 // Copias: enviar las que faltan o están viejas y reintentar los borrados pendientes.
                 for h in store.holders().unwrap_or_default() {
                     if wait.get(&h.addr).is_some_and(|(at, _)| Instant::now() < *at) {
@@ -836,12 +901,29 @@ impl Mesh {
     /// Empieza a recibir mensajes en segundo plano en `port` (y en el relé, si hay). `events` recibe
     /// un aviso cada vez que llega algo nuevo.
     pub fn listen(&self, port: u16, events: Option<Arc<dyn Events>>) -> R<()> {
-        let l = TcpListener::bind(("0.0.0.0", port)).map_err(|e| fail(e.to_string()))?;
+        // [::] escucha IPv6 e IPv4 a la vez; si el teléfono no tiene IPv6, solo IPv4.
+        let l = TcpListener::bind(("::", port)).or_else(|_| TcpListener::bind(("0.0.0.0", port))).map_err(|e| fail(e.to_string()))?;
         let (dir, me) = (self.dir.clone(), self.me.clone());
         // Además de la escucha directa, el buzón en el relé (si hay): así llegan las llamadas
         // aunque este teléfono esté detrás de un router o en datos móviles.
-        if let Some((relay, secret)) = Store::open(&dir, me.db_key())?.relay()? {
-            let (dir, me, events) = (dir.clone(), me.clone(), events.clone());
+        let store = Store::open(&dir, me.db_key())?;
+        // Puerto abierto en el router de casa (UPnP) + mi IP pública según el relé: así me llegan
+        // directo desde otras redes, también desde datos móviles. Sin UPnP, se sigue con el relé.
+        let relays = store.relays()?;
+        thread::spawn(move || loop {
+            let ruta = crate::upnp::open(port, 3600)
+                .ok()
+                .and_then(|public| relays.iter().find_map(|r| crate::relay::public_ip(r).ok()).map(|ip| format!("{ip}:{public}")));
+            let ok = ruta.is_some();
+            *PUBLIC.lock().unwrap_or_else(|e| e.into_inner()) = ruta;
+            thread::sleep(Duration::from_secs(if ok { 30 * 60 } else { 10 * 60 }));
+        });
+        // Directorio más nuevo (relés y guardianes añadidos después de publicar la app).
+        let (d, m) = (dir.clone(), me.clone());
+        thread::spawn(move || Store::open(&d, m.db_key()).map(|s| crate::directorio::actualizar(&s)));
+        let secret = store.mailbox_secret()?;
+        for relay in store.relays()? {
+            let (dir, me, events, secret) = (dir.clone(), me.clone(), events.clone(), secret.clone());
             thread::spawn(move || {
                 crate::relay::listen(relay, secret, move |stream| {
                     if !OFFLINE.load(Ordering::SeqCst)

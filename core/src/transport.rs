@@ -1,11 +1,13 @@
 //! Conexión directa cifrada entre dos dispositivos (TCP + Noise XX).
 
-use crate::{Identity, Result, identity::{NOISE, verify_cert}};
+use crate::{
+    net::{Conn, Stream},Identity, Result, identity::{NOISE, verify_cert}};
 use serde::{Deserialize, Serialize};
+use crate::tiempo::Instant;
 use std::{
-    io::{ErrorKind, Read, Write},
+    io::ErrorKind,
     net::{TcpStream, ToSocketAddrs},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 /// Versión del protocolo. Va dentro del saludo: dos versiones distintas no llegan a conectar.
@@ -19,10 +21,10 @@ pub const PAD: usize = 512;
 
 /// Abre una conexión siguiendo una ruta: «ip:puerto», «relay=host:puerto/buzón» o varias separadas
 /// por «|», que se prueban en orden (primero la directa: el relé solo si hace falta).
-pub fn open(route: &str) -> Result<TcpStream> {
+pub fn open(route: &str) -> Result<Stream> {
     let parts: Vec<&str> = route.split('|').map(str::trim).filter(|p| !p.is_empty()).collect();
     let wait = if parts.len() > 1 { SHORT } else { TIMEOUT };
-    let mut last: Option<crate::Result<TcpStream>> = None;
+    let mut last: Option<crate::Result<Stream>> = None;
     for part in parts {
         let attempt = match part.strip_prefix("relay=") {
             Some(rest) => rest
@@ -34,7 +36,7 @@ pub fn open(route: &str) -> Result<TcpStream> {
                 .map_err(Into::into)
                 .and_then(|mut a| a.next().ok_or_else(|| "dirección no válida".into()))
                 .and_then(|a| match reachable(&a) {
-                    true => TcpStream::connect_timeout(&a, wait).map_err(Into::into),
+                    true => TcpStream::connect_timeout(&a, wait).map(|t| Box::new(t) as Stream).map_err(Into::into),
                     false => Err("dirección privada de otra red".into()),
                 }),
         };
@@ -51,7 +53,10 @@ pub fn open(route: &str) -> Result<TcpStream> {
 /// bloque /16, se salta y se va directo al relé (con datos móviles se perdían segundos esperando).
 // ponytail: compara el /16; una red privada más grande que eso se trataría como «otra red».
 fn reachable(target: &std::net::SocketAddr) -> bool {
-    let std::net::IpAddr::V4(t) = target.ip() else { return true };
+    // IPv6: solo si tengo ruta hacia ella (sin IPv6, se salta al momento en vez de esperar).
+    let std::net::IpAddr::V4(t) = target.ip() else {
+        return std::net::UdpSocket::bind("[::]:0").and_then(|u| u.connect(target)).is_ok();
+    };
     let private = t.is_private() || t.is_loopback() || (t.octets()[0] == 100 && (64..128).contains(&t.octets()[1]));
     if !private || t.is_loopback() {
         return true;
@@ -112,10 +117,15 @@ pub enum Frame {
     Rev { list: Option<String> },
     /// Confirmación: el destino ya lo guardó en su base de datos.
     Ack { id: String },
+    /// Guardián: «guarda mi código de recuperación en este localizador» / «dame el de este
+    /// localizador» / respuesta (ninguno si no existe).
+    CuentaPut { id: String, code: String },
+    CuentaGet { id: String },
+    Cuenta { code: Option<String> },
 }
 
 pub struct Session {
-    stream: TcpStream,
+    stream: Stream,
     noise: snow::TransportState,
     /// Cuenta del otro lado.
     pub peer: Vec<u8>,
@@ -134,14 +144,14 @@ fn builder(me: &Identity) -> Result<snow::Builder<'_>> {
     Ok(snow::Builder::new(NOISE.parse()?).local_private_key(&me.private)?.prologue(PROLOGUE)?)
 }
 
-fn write_raw(s: &mut TcpStream, b: &[u8]) -> Result<()> {
+fn write_raw(s: &mut dyn Conn, b: &[u8]) -> Result<()> {
     s.write_all(&(b.len() as u16).to_be_bytes())?;
     s.write_all(b)?;
     Ok(())
 }
 
 /// Llena `buf` antes de `deadline`. `Ok(false)` si el otro lado cerró antes del primer byte.
-fn read_until(s: &mut TcpStream, buf: &mut [u8], deadline: Instant) -> Result<bool> {
+fn read_until(s: &mut dyn Conn, buf: &mut [u8], deadline: Instant) -> Result<bool> {
     let mut n = 0;
     while n < buf.len() {
         let left = deadline.saturating_duration_since(Instant::now());
@@ -161,7 +171,7 @@ fn read_until(s: &mut TcpStream, buf: &mut [u8], deadline: Instant) -> Result<bo
 }
 
 /// `None` si el otro lado cerró la conexión.
-fn read_raw(s: &mut TcpStream, deadline: Instant) -> Result<Option<Vec<u8>>> {
+fn read_raw(s: &mut dyn Conn, deadline: Instant) -> Result<Option<Vec<u8>>> {
     let mut len = [0u8; 2];
     if !read_until(s, &mut len, deadline)? {
         return Ok(None);
@@ -184,7 +194,7 @@ fn check_proof(proof: &[u8], device: Option<&[u8]>) -> Result<Vec<u8>> {
     Ok(proof[..32].to_vec())
 }
 
-fn read_hs(s: &mut TcpStream, deadline: Instant) -> Result<Vec<u8>> {
+fn read_hs(s: &mut dyn Conn, deadline: Instant) -> Result<Vec<u8>> {
     read_raw(s, deadline)?.ok_or_else(|| "conexión cerrada durante el saludo".into())
 }
 
@@ -210,7 +220,8 @@ impl Session {
     }
 
     /// Acepta una conexión entrante. `peer` es la cuenta del otro lado; quien llama decide si es de confianza.
-    pub fn accept(mut stream: TcpStream, me: &Identity) -> Result<Session> {
+    pub fn accept(stream: impl Conn + 'static, me: &Identity) -> Result<Session> {
+        let mut stream: Stream = Box::new(stream);
         let deadline = Instant::now() + HANDSHAKE;
         let mut hs = builder(me)?.build_responder()?;
         let mut buf = vec![0; MAX];

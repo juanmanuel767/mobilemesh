@@ -24,5 +24,7 @@ include(":app")
 include(":mobilemesh-sdk")
 // Pieza opcional: avisos al instante por Firebase (solo para quien la quiera).
 include(":mobilemesh-avisos-fcm")
+// Pieza aparte: convierte un móvil en relé que arranca solo al encender.
+include(":rele-movil")
 include(":ejemplo-notas")
 project(":ejemplo-notas").projectDir = file("../examples/notas")

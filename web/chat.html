@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Chat MobileMesh web</title>
+<pre id="estado">cargando…</pre>
+<script type="module">
+  // Prueba de mensajes: window.mesh queda disponible para manejarla desde fuera.
+  import { MobileMesh } from "./mobilemesh.js";
+  const estado = document.getElementById("estado");
+  window.nuevos = 0;
+  try {
+    window.mesh = await MobileMesh.iniciar();
+    mesh.recibir((n) => (window.nuevos += n));
+    estado.textContent = `listo\ninvitación: ${await mesh.invitacion()}`;
+  } catch (e) {
+    estado.textContent = `error: ${e.message}`;
+  }
+  window.listo = true;
+</script>

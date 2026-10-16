@@ -13,7 +13,7 @@ pub const MIN_PASS: usize = 10;
 /// Argon2id: cada intento de adivinar la contraseña cuesta memoria y tiempo. MM3 usa 64 MiB y 3
 /// pasadas (MM2 usaba los mínimos de OWASP: 19 MiB y 2); la clave de cuenta no se puede cambiar,
 /// así que conviene que la copia aguante mucho (auditoría, Fase 13).
-fn key(pass: &str, salt: &[u8], strong: bool) -> Result<chacha20poly1305::Key> {
+pub(crate) fn key(pass: &str, salt: &[u8], strong: bool) -> Result<chacha20poly1305::Key> {
     let mut k = [0u8; 32];
     let argon = if strong {
         let params = argon2::Params::new(64 * 1024, 3, 1, Some(32)).map_err(|e| e.to_string())?;

@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import java.io.File
 import java.net.Inet4Address
+import java.net.Inet6Address
 import java.net.NetworkInterface
 import kotlin.concurrent.thread
 import org.json.JSONArray
@@ -93,6 +94,20 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
             return MobileMesh(app, m)
         }
 
+        /**
+         * Teléfono perdido: recupera la cuenta con usuario y contraseña desde el guardián y trae los
+         * datos de su copia (si la había). Devuelve la cuenta y un resumen de lo recuperado.
+         */
+        fun recuperarConGuardian(context: Context, usuario: String, contrasena: String, puerto: Int = PUERTO_POR_DEFECTO): Pair<MobileMesh, String> {
+            val app = context.applicationContext
+            MeshHolder.guardarPuerto(app, puerto)
+            val m = envolver { Mesh.recoverFromGuardian(MeshHolder.dir(app), KeystoreGuard(app), usuario, contrasena) }
+            MeshHolder.mesh = m
+            MeshService.start(app)
+            val resumen = runCatching { m.restoreCopy(m.useGuardian()) }.getOrElse { "Cuenta recuperada; no había copia de datos" }
+            return MobileMesh(app, m) to resumen
+        }
+
         internal fun <T> envolver(op: () -> T): T = try {
             op()
         } catch (e: MeshException.Fallo) {
@@ -116,8 +131,8 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
 
     /** Invitación (texto para un QR) con la que otro te añade. Solo lleva datos públicos. */
     fun invitacion(): String {
-        val ip = ipLocal() ?: throw MobileMeshError("No hay conexión a ninguna red: conéctate a una wifi o a datos para crear tu invitación")
-        return envolver { nucleo.invite("$ip:${MeshHolder.puerto(context)}") }
+        val ruta = rutaDirecta() ?: throw MobileMeshError("No hay conexión a ninguna red: conéctate a una wifi o a datos para crear tu invitación")
+        return envolver { nucleo.invite(ruta) }
     }
 
     /** Añade un contacto con su invitación. Devuelve `true` si era otro dispositivo de tu cuenta. */
@@ -173,7 +188,7 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
      */
     fun llamar(ayudante: String, funcion: String, datos: Map<String, Any?> = emptyMap(), alTerminar: (Result<String>) -> Unit) =
         enSegundoPlano({
-            val ruta = listOfNotNull(ipLocal()?.let { "$it:${MeshHolder.puerto(context)}" }, nucleo.relayInfo()).joinToString("|")
+            val ruta = listOfNotNull(rutaDirecta(), nucleo.relayInfo()).joinToString("|")
             val id = nucleo.callHelper(ayudante, funcion, JSONObject(datos).toString(), ruta)
             val hasta = System.currentTimeMillis() + 60_000
             var respuesta: String? = null
@@ -189,6 +204,17 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
 
     /** Copia de recuperación cifrada con `contrasena` (mínimo 10 caracteres). Solo el principal. */
     fun copiaDeRecuperacion(contrasena: String): String = envolver { nucleo.backup(contrasena) }
+
+    /**
+     * Protección contra pérdida del teléfono: guarda en el guardián el código de la cuenta (cifrado
+     * con `contrasena`, mínimo 12 caracteres) y una copia cifrada de los datos. El guardián no puede
+     * leer nada. Repetirla de vez en cuando para que la copia de datos esté al día.
+     */
+    fun protegerConGuardian(usuario: String, contrasena: String): String = envolver {
+        nucleo.saveAccountInGuardian(usuario, contrasena)
+        nucleo.useGuardian()
+        nucleo.backupNow()
+    }
 
     /** Usa tu propio relé «host:puerto» para llegar a otras redes (se aplica al reiniciar la app). */
     fun usarRele(direccion: String?) = envolver { nucleo.setRelay(direccion) }
@@ -211,9 +237,20 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
     /** Resumen del estado para depurar (sin datos privados). */
     fun diagnostico(): String = envolver { nucleo.diagnostics() }
 
-    private fun ipLocal(): String? = NetworkInterface.getNetworkInterfaces().toList()
-        .flatMap { it.inetAddresses.toList() }
-        .firstOrNull { it is Inet4Address && !it.isLoopbackAddress }?.hostAddress
+    /**
+     * Mis direcciones directas: la IPv4 de la red en que estoy, la pública si el router abrió el
+     * puerto (UPnP) y la IPv6 pública. Con las dos últimas se llega directo desde otras redes.
+     */
+    private fun rutaDirecta(): String? {
+        val p = MeshHolder.puerto(context)
+        val addrs = NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback }.flatMap { it.inetAddresses.toList() }
+        val v4 = addrs.firstOrNull { it is Inet4Address }?.hostAddress?.let { "$it:$p" }
+        // Pública: 2000::/3 (no la local de enlace ni la de sitio).
+        val v6 = addrs.firstOrNull { it is Inet6Address && (it.address[0].toInt() and 0xe0) == 0x20 }
+            ?.hostAddress?.substringBefore('%')?.let { "[$it]:$p" }
+        // La pública (puerto abierto por UPnP en el router de casa): llega desde datos móviles.
+        return listOfNotNull(v4, nucleo.publicRoute(), v6).joinToString("|").ifEmpty { null }
+    }
 }
 
 /**

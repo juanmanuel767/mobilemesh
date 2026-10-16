@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Prueba MobileMesh web</title>
+<pre id="salida">cargando…</pre>
+<script type="module">
+  // ?rele=host:puerto · ?guardar=texto (guarda «texto» en notas/n1; sin él, solo lee)
+  import { MobileMesh } from "./mobilemesh.js";
+  const salida = document.getElementById("salida");
+  const q = new URLSearchParams(location.search);
+  const rele = q.get("rele") ?? "127.0.0.1:7990";
+  const linea = (t) => (salida.textContent += t + "\n");
+  salida.textContent = "";
+  try {
+    const mesh = await MobileMesh.iniciar();
+    linea(`cuenta: ${await mesh.cuenta()}`);
+    if (q.get("guardar")) await mesh.guardar("notas", "n1", "texto", q.get("guardar"));
+    linea(`notas: ${JSON.stringify(await mesh.datos("notas"))}`);
+    linea(`IP según el relé: ${await mesh.quien(rele)}`);
+    try {
+      linea(`directorio: ${JSON.stringify(await mesh.directorio(rele))}`);
+    } catch (e) {
+      linea(`directorio: ${e.message}`);
+    }
+  } catch (e) {
+    linea(`error: ${e.message}`);
+  }
+  window.resultado = salida.textContent;
+</script>

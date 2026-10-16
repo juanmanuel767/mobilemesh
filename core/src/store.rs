@@ -696,23 +696,55 @@ impl Store {
         Ok(())
     }
 
-    /// Relé configurado y secreto de mi buzón en él (se crea la primera vez).
-    pub fn relay(&self) -> Result<Option<(String, String)>> {
-        let Some(relay) = self.setting("rele")? else { return Ok(None) };
-        let secret = match self.setting("buzon")? {
-            Some(s) => s,
-            None => {
-                let s = self.new_id()? + &self.new_id()?;
-                self.set_setting("buzon", Some(&s))?;
-                s
+    /// Relés en los que tengo buzón: los que eligió la app («a|b») o, si no eligió ninguno, dos de
+    /// los universales (del directorio o de la lista fija). `SIN_RELE` los quita todos.
+    pub fn relays(&self) -> Result<Vec<String>> {
+        let split = |r: &str| -> Vec<String> { r.split('|').map(str::trim).filter(|r| !r.is_empty() && *r != crate::relay::SIN_RELE).map(String::from).collect() };
+        if let Some(r) = self.setting("rele")? {
+            return Ok(split(&r));
+        }
+        let all = crate::directorio::reles(self);
+        if all.is_empty() {
+            return Ok(vec![]);
+        }
+        // Se apuntan para que añadir relés a la lista no cambie la ruta que ya tienen los
+        // contactos; solo se eligen otros si los dos salieron del directorio.
+        if let Some(r) = self.setting("rele_auto")? {
+            let mine = split(&r);
+            if mine.iter().any(|m| all.contains(m)) {
+                return Ok(mine);
             }
-        };
-        Ok(Some((relay, secret)))
+        }
+        let all: Vec<&str> = all.iter().map(String::as_str).collect();
+        let mine = crate::relay::choose(&all, &self.mailbox_secret()?);
+        self.set_setting("rele_auto", Some(&mine.join("|")))?;
+        Ok(mine)
     }
 
-    /// Ruta por el relé para mi invitación: «relay=host:puerto/buzón».
+    /// Secreto de mi buzón (el mismo en todos los relés; se crea la primera vez).
+    pub fn mailbox_secret(&self) -> Result<String> {
+        if let Some(s) = self.setting("buzon")? {
+            return Ok(s);
+        }
+        let s = self.new_id()? + &self.new_id()?;
+        self.set_setting("buzon", Some(&s))?;
+        Ok(s)
+    }
+
+    /// Primer relé y secreto de mi buzón.
+    pub fn relay(&self) -> Result<Option<(String, String)>> {
+        let Some(relay) = self.relays()?.into_iter().next() else { return Ok(None) };
+        Ok(Some((relay, self.mailbox_secret()?)))
+    }
+
+    /// Ruta por los relés para mi invitación: «relay=host:puerto/buzón», varias separadas por «|».
     pub fn relay_route(&self) -> Result<Option<String>> {
-        Ok(self.relay()?.map(|(relay, secret)| format!("relay={relay}/{}", crate::relay::mailbox_id(&secret))))
+        let relays = self.relays()?;
+        if relays.is_empty() {
+            return Ok(None);
+        }
+        let id = crate::relay::mailbox_id(&self.mailbox_secret()?);
+        Ok(Some(relays.iter().map(|r| format!("relay={r}/{id}")).collect::<Vec<_>>().join("|")))
     }
 
     // ---------- Buzón de cartas ----------
@@ -870,6 +902,22 @@ impl Store {
             "SELECT h.owner, c.name, h.size FROM replicas_held h LEFT JOIN contacts c ON c.key = h.owner ORDER BY h.owner",
         )?;
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as u64)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// El dueño dio señales (comprobó o pidió su copia): no está abandonada.
+    pub fn touch_held(&self, owner: &str) -> Result<()> {
+        self.db.execute("UPDATE replicas_held SET updated_at = unixepoch() WHERE owner = ?1", [owner])?;
+        Ok(())
+    }
+
+    /// Copias guardadas para otros sin señales desde `before` (segundos Unix) y sin consentimiento
+    /// expreso (las de amigos no caducan).
+    pub fn stale_held(&self, before: i64) -> Result<Vec<String>> {
+        let mut st = self.db.prepare(
+            "SELECT owner FROM replicas_held WHERE updated_at < ?1 AND owner NOT IN (SELECT owner FROM replica_consent)",
+        )?;
+        let rows = st.query_map([before], |r| r.get(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 

@@ -4,15 +4,15 @@
 
 use crate::Result;
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
-use std::{
-    fs,
-    io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::Path,
-};
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+#[cfg(not(target_arch = "wasm32"))]
+use std::{fs, io::Write};
+use std::path::Path;
 
 /// Saludo Noise: autenticación mutua por clave, cifrado ChaCha20-Poly1305 y claves nuevas en cada sesión.
 pub const NOISE: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
+#[cfg(not(target_arch = "wasm32"))]
 const FILE: &str = "identity.key";
 const CERT_CONTEXT: &[u8] = b"mobilemesh-dispositivo-v1";
 /// Formato del archivo: [versión, tipo] + datos. Tipos: 0 esperando vinculación, 1 vinculado, 2 principal.
@@ -181,17 +181,54 @@ impl Pending {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn exists(dir: &Path) -> bool {
     dir.join(FILE).exists()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn read_stored(dir: &Path) -> Result<Vec<u8>> {
+    Ok(fs::read(dir.join(FILE)).map_err(|e| format!("sin identidad en {}: {e}", dir.display()))?)
+}
+
+// En el navegador no hay archivos: la identidad va en su propia base SQLite (guardada en OPFS).
+#[cfg(target_arch = "wasm32")]
+fn kv(dir: &Path) -> Result<rusqlite::Connection> {
+    let db = rusqlite::Connection::open(dir.join("identidad.db"))?;
+    db.execute_batch("CREATE TABLE IF NOT EXISTS identidad(id INTEGER PRIMARY KEY CHECK (id = 1), v BLOB NOT NULL);")?;
+    Ok(db)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn exists(dir: &Path) -> bool {
+    read_stored(dir).is_ok()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_stored(dir: &Path) -> Result<Vec<u8>> {
+    Ok(kv(dir)?.query_row("SELECT v FROM identidad WHERE id = 1", [], |r| r.get(0)).map_err(|_| "sin identidad en este navegador")?)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn write_secure(dir: &Path, bytes: &[u8]) -> Result<()> {
+    kv(dir)?.execute("INSERT INTO identidad(id, v) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET v = excluded.v", [bytes])?;
+    Ok(())
+}
+
 /// Escribe de forma segura ante apagones: archivo aparte, forzado al disco y renombrado.
 /// (Pasó en un teléfono real sin batería; Android prohíbe hard_link en la carpeta de la app.)
+#[cfg(not(target_arch = "wasm32"))]
 fn write_secure(dir: &Path, bytes: &[u8]) -> Result<()> {
     fs::create_dir_all(dir)?;
+    // Solo para mí (en el navegador no hay permisos de archivo).
+    #[cfg(unix)]
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
     let tmp = dir.join(format!("{FILE}.tmp"));
-    let mut f = fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    opts.mode(0o600);
+    let mut f = opts.open(&tmp)?;
     f.write_all(bytes)?;
     f.sync_all()?;
     fs::rename(&tmp, dir.join(FILE))?;
@@ -200,7 +237,7 @@ fn write_secure(dir: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 pub fn load_any(dir: &Path, s: &dyn Sealer) -> Result<Stored> {
-    let raw = fs::read(dir.join(FILE)).map_err(|e| format!("sin identidad en {}: {e}", dir.display()))?;
+    let raw = read_stored(dir)?;
     // Antes de la Fase 2 la clave estaba sin cifrar (64 bytes): se acepta y se protege al guardarla.
     let b = match s.open(&raw) {
         Ok(b) => b,
