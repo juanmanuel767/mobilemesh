@@ -17,6 +17,10 @@ export const MobileMesh = {
   /** En un móvil nuevo, en lugar de `iniciar`: recupera la cuenta con usuario y contraseña. */
   entrar: (usuario, contrasena) => N.entrar(usuario, contrasena),
   miUsuario: () => N.miUsuario(),
+  /** Código en papel (56 letras): enséñalo para apuntarlo; recupera la cuenta sin contraseña. */
+  codigoPapel: () => N.codigoPapel(),
+  /** Contraseña olvidada: entra con el código en papel y elige una contraseña nueva. */
+  entrarConCodigo: (usuario, codigo, nuevaContrasena) => N.entrarConCodigo(usuario, codigo, nuevaContrasena),
   existeUsuario: (usuario) => N.existeUsuario(usuario),
   /** ¿Se puede recuperar la cuenta al formatear? (tiene copia en el guardián, que se actualiza sola) */
   protegida: () => N.protegida(),

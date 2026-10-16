@@ -128,6 +128,21 @@ class MobileMeshModule(private val ctx: ReactApplicationContext) : ReactContextB
         null
     }
 
+    /** Código en papel de la cuenta (56 letras): recupera la cuenta aunque se olvide la contraseña. */
+    @ReactMethod fun codigoPapel(p: Promise) = trabajar(p) { m().codigoEnPapel() }
+
+    /**
+     * Contraseña olvidada: entra con el código en papel y deja la cuenta protegida con una contraseña
+     * nueva (el guardián ya no sabe la vieja).
+     */
+    @ReactMethod
+    fun entrarConCodigo(usuario: String, codigo: String, nuevaContrasena: String, p: Promise) = trabajar(p) {
+        val id = preparar(MobileMesh.recuperarConPapel(ctx, codigo, puerto).first)
+        prefs().edit().putString("usuario", usuario.trim().lowercase()).apply()
+        m().protegerConGuardian(usuario, nuevaContrasena)
+        id
+    }
+
     @ReactMethod fun existeUsuario(usuario: String, p: Promise) = trabajar(p) { m().existeUsuario(usuario) }
 
     @ReactMethod fun anadirPorNombre(usuario: String, p: Promise) = trabajar(p) { m().anadirPorNombre(usuario); null }

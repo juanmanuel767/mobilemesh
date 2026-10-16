@@ -64,6 +64,67 @@ pub fn import(code: &str, pass: &str) -> Result<Identity> {
     Identity::from_account_secret(secret.as_slice().try_into()?)
 }
 
+/// Código en papel: la clave de la cuenta tal cual, **sin contraseña**, para recuperar la cuenta
+/// aunque se olvide la contraseña. 32 bytes + 3 de comprobación en base 32 (sin las letras que se
+/// confunden: I, L, O, U) = 56 letras en 14 grupos de 4. Quien lo tenga entra en la cuenta: se
+/// guarda como una llave (papel en casa), nunca en el teléfono ni en fotos.
+const PAPEL: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+fn comprobacion(secret: &[u8]) -> [u8; 3] {
+    use sha2::{Digest, Sha256};
+    let h = Sha256::new_with_prefix(b"mobilemesh-papel-v1").chain_update(secret).finalize();
+    [h[0], h[1], h[2]]
+}
+
+pub fn paper(id: &Identity) -> Result<String> {
+    let secret = id.account_secret.ok_or("el código se crea desde el dispositivo principal de la cuenta")?;
+    let mut bytes = secret.to_vec();
+    bytes.extend_from_slice(&comprobacion(&secret));
+    let (mut acc, mut bits, mut letras) = (0u64, 0, String::new());
+    for b in bytes {
+        acc = (acc << 8) | u64::from(b);
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            letras.push(PAPEL[((acc >> bits) & 31) as usize] as char);
+        }
+        acc &= (1 << bits) - 1;
+    }
+    Ok(letras.as_bytes().chunks(4).map(|g| std::str::from_utf8(g).unwrap_or_default()).collect::<Vec<_>>().join("-"))
+}
+
+pub fn from_paper(code: &str) -> Result<Identity> {
+    // Copiado a mano: sin espacios ni guiones, en mayúsculas, y O→0, I/L→1.
+    let letras: String = code
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-')
+        .map(|c| match c.to_ascii_uppercase() {
+            'O' => '0',
+            'I' | 'L' => '1',
+            c => c,
+        })
+        .collect();
+    if letras.len() != 56 {
+        return Err(format!("el código debe tener 56 letras y tiene {}", letras.len()).into());
+    }
+    let (mut acc, mut bits, mut bytes) = (0u64, 0, Vec::with_capacity(35));
+    for c in letras.bytes() {
+        let v = PAPEL.iter().position(|&p| p == c).ok_or_else(|| format!("letra no válida en el código: {}", c as char))?;
+        acc = (acc << 5) | v as u64;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            bytes.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    let (secret, check) = bytes.split_at(32);
+    if check != comprobacion(secret) {
+        return Err("el código tiene algún error: revisa letra por letra".into());
+    }
+    Identity::from_account_secret(secret.try_into()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +148,22 @@ mod tests {
         let last = bad.len() - 1;
         bad[last] = if bad[last] == b'0' { b'1' } else { b'0' };
         assert!(import(&String::from_utf8(bad).unwrap(), "contraseña larga").is_err());
+    }
+
+    #[test]
+    fn codigo_en_papel() {
+        let id = Identity::from_account_secret([5u8; 32]).unwrap();
+        let code = paper(&id).unwrap();
+        assert_eq!(code.len(), 56 + 13, "14 grupos de 4 con guiones: {code}");
+        assert_eq!(from_paper(&code).unwrap().account, id.account);
+        // Copiado a mano: minúsculas, espacios, O por 0 e I/L por 1.
+        let mano = code.to_lowercase().replace('-', " ").replace('0', "o").replace('1', "l");
+        assert_eq!(from_paper(&mano).unwrap().account, id.account);
+        // Una letra cambiada o que falte: se detecta.
+        let mut mal = code.clone().into_bytes();
+        mal[0] = if mal[0] == b'A' { b'B' } else { b'A' };
+        assert!(from_paper(&String::from_utf8(mal).unwrap()).is_err());
+        assert!(from_paper(&code[..code.len() - 1]).is_err());
     }
 
     #[test]

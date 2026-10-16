@@ -315,6 +315,19 @@ impl Mesh {
         Self::ready(dir, me)
     }
 
+    /// Recupera la cuenta con el código en papel (sin contraseña). Después, `use_guardian` +
+    /// `restore_copy(GUARDIAN)` traen los datos.
+    #[uniffi::constructor]
+    pub fn restore_paper(dir: String, guard: Arc<dyn KeyGuard>, code: String) -> R<Arc<Self>> {
+        let (dir, guard) = (PathBuf::from(dir), Guard(guard));
+        if Identity::load(&dir, &guard).is_ok() {
+            return Err(fail("este dispositivo ya tiene una identidad válida; no se reemplaza"));
+        }
+        let me = recovery::from_paper(&code)?;
+        me.save(&dir, &guard)?;
+        Self::ready(dir, me)
+    }
+
     /// Recupera la cuenta desde un guardián con usuario y contraseña (teléfono perdido). Después,
     /// `use_guardian` + `restore_copy(GUARDIAN)` traen los datos.
     #[uniffi::constructor]
@@ -417,6 +430,11 @@ impl Mesh {
     /// Copia de recuperación cifrada con `pass`, para guardar fuera del teléfono.
     pub fn backup(&self, pass: String) -> R<String> {
         Ok(recovery::export(&self.me, &pass)?)
+    }
+
+    /// Código en papel de la cuenta (56 letras): recupera la cuenta sin contraseña.
+    pub fn paper_code(&self) -> R<String> {
+        Ok(recovery::paper(&self.me)?)
     }
 
     /// Invitación (para el QR) con la que otro dispositivo nos añade: dirección directa y, si hay

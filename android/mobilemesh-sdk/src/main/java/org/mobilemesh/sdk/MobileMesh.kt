@@ -109,6 +109,20 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
             return MobileMesh(app, m) to resumen
         }
 
+        /**
+         * Contraseña olvidada: recupera la cuenta con el código en papel (`codigoEnPapel`) y trae los
+         * datos de su copia en el guardián (si la había). Devuelve la cuenta y un resumen.
+         */
+        fun recuperarConPapel(context: Context, codigo: String, puerto: Int = PUERTO_POR_DEFECTO): Pair<MobileMesh, String> {
+            val app = context.applicationContext
+            MeshHolder.guardarPuerto(app, puerto)
+            val m = envolver { Mesh.restorePaper(MeshHolder.dir(app), KeystoreGuard(app), codigo) }
+            MeshHolder.mesh = m
+            MeshService.start(app)
+            val resumen = runCatching { m.restoreCopy(m.useGuardian()) }.getOrElse { "Cuenta recuperada; no había copia de datos" }
+            return MobileMesh(app, m) to resumen
+        }
+
         internal fun <T> envolver(op: () -> T): T = try {
             op()
         } catch (e: MeshException.Fallo) {
@@ -224,6 +238,13 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
 
     /** Copia de recuperación cifrada con `contrasena` (mínimo 10 caracteres). Solo el principal. */
     fun copiaDeRecuperacion(contrasena: String): String = envolver { nucleo.backup(contrasena) }
+
+    /**
+     * Código en papel (56 letras, sin contraseña): recupera la cuenta aunque se olvide la contraseña
+     * (`MobileMesh.recuperarConPapel`). Quien lo tenga entra en la cuenta: enséñalo para que se apunte
+     * en papel, nunca lo guardes en el teléfono. Solo el dispositivo principal.
+     */
+    fun codigoEnPapel(): String = envolver { nucleo.paperCode() }
 
     /**
      * Protección contra pérdida del teléfono: guarda en el guardián el código de la cuenta (cifrado
