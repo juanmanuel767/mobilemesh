@@ -21,7 +21,7 @@ use std::{path::Path, time::Duration};
 /// Guardianes que usa toda app que no elija los suyos (invitación `mobilemesh:2:<clave>:<ruta>`).
 // ponytail: lista fija como la de relés; directorio que se actualice solo si crece.
 // El primero es el del nubia de casa (app «Relé MobileMesh», puerto 7954).
-pub const UNIVERSALES: &[&str] = &["mobilemesh:2:5dc0a5fc029b44b53ca14ec0fe4236991cde1617bfc220159bdd373f5af99787:181.60.197.125:7954"];
+pub const UNIVERSALES: &[&str] = &["mobilemesh:2:5dc0a5fc029b44b53ca14ec0fe4236991cde1617bfc220159bdd373f5af99787:mobilemeshjuan.duckdns.org:7954"];
 
 /// Espacio por cuenta para la copia de datos.
 pub const MAX_COPIA: u64 = 50 * 1024 * 1024;

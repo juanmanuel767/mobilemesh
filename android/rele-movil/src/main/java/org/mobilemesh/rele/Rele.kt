@@ -36,7 +36,7 @@ private val ARGS = listOf("0.0.0.0:$PUERTO", "--max", "5000", "--limite", "500",
 private const val PUERTO_GUARDIAN = 7954
 
 /** Relés universales a los que preguntar «¿con qué IP me ves?» para saber mi IP pública. */
-private val RELES_QUIEN = listOf("181.60.197.125" to 7900)
+private val RELES_QUIEN = listOf("mobilemeshjuan.duckdns.org" to 7900, "181.60.197.125" to 7900)
 
 /** Al encender el móvil (o al actualizar la app) arranca el relé. */
 class Arranque : BroadcastReceiver() {
@@ -84,18 +84,41 @@ class ReleService : Service() {
                 var ruta: String? = null
                 while (ruta == null) {
                     ruta = File(filesDir, "ruta-publica.txt").takeIf { it.exists() }?.readText()?.trim()?.ifEmpty { null }
+                        ?: duckdnsDominio()?.let { "$it:$PUERTO_GUARDIAN" }
                         ?: ipPublica()?.let { "$it:$PUERTO_GUARDIAN" }
                     if (ruta == null) Thread.sleep(30_000)
                 }
                 vigilar("guardián", listOf(mesh, dirGuardian, "guardian", "0.0.0.0:$PUERTO_GUARDIAN", ruta), guardian)
             }
             hilo { puerto(PUERTO_GUARDIAN, guardian) }
+            hilo { duckdns(rele) }
         }
         return START_STICKY
     }
 
     /** Pide al router (UPnP) que abra el puerto hacia este móvil; se renueva cada 30 min, así sigue
      *  abierto aunque cambie la IP del móvil o de wifi, y caduca solo si el móvil se va. */
+    /** duckdns.txt: «subdominio token» (no va en el código: el token es como una contraseña). */
+    private fun duckdnsConfig(): Pair<String, String>? = File(filesDir, "duckdns.txt").takeIf { it.exists() }
+        ?.readText()?.trim()?.split(Regex("\\s+"))?.takeIf { it.size == 2 }?.let { it[0] to it[1] }
+
+    private fun duckdnsDominio(): String? = duckdnsConfig()?.let { "${it.first}.duckdns.org" }
+
+    /** Cada 5 minutos avisa a DuckDNS de mi IP pública, así el nombre fijo sigue a la casa. */
+    private fun duckdns(log: File) {
+        var ultimo = ""
+        while (true) {
+            val r = duckdnsConfig()?.let { (dominio, token) ->
+                runCatching {
+                    URL("https://www.duckdns.org/update?domains=$dominio&token=$token&ip=").readText().trim()
+                }.getOrElse { "sin conexión" }.let { "DuckDNS ($dominio.duckdns.org): $it" }
+            }
+            if (r != null && r != ultimo) log.appendText("$r ${java.util.Date()}\n")
+            ultimo = r ?: ""
+            Thread.sleep(5 * 60 * 1000L)
+        }
+    }
+
     /** Mi IP pública: la que ve un relé universal al conectarme (como STUN). */
     private fun ipPublica(): String? = RELES_QUIEN.firstNotNullOfOrNull { (host, puerto) ->
         runCatching {

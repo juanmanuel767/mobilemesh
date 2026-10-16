@@ -36,9 +36,8 @@
 /// Relés que usa toda app que no elija los suyos: así funciona entre redes distintas sin
 /// configurar nada. Se prueban en orden y el buzón se registra en todos.
 // ponytail: lista fija en el programa; un directorio de relés que se actualice solo si crece mucho.
-// El primero es el nubia de casa (app «Relé MobileMesh»); cambiar la IP por un nombre de DuckDNS
-// cuando exista, porque la de casa puede cambiar.
-pub const UNIVERSALES: &[&str] = &["181.60.197.125:7900"];
+// El primero es el nubia de casa (app «Relé MobileMesh»), por su nombre fijo de DuckDNS.
+pub const UNIVERSALES: &[&str] = &["mobilemeshjuan.duckdns.org:7900"];
 
 /// Los 2 relés de `all` que usa el buzón con este secreto: cada teléfono usa solo 2, así la carga se
 /// reparte entre todos los de la lista.
