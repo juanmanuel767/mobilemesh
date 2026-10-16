@@ -1390,3 +1390,29 @@ fn un_desconocido_no_puede_llenar_el_guardian_con_mensajes() {
     with_holder(&intruso, &g, &intruso.1, &intruso.0, |s, h| replica::push(s, &intruso.1, h)).unwrap();
     assert!(st(&g.0).public_held_bytes("nadie").unwrap() > 0);
 }
+
+/// Si la dirección directa la contesta otra cuenta (otra red con la misma IP privada), la conexión
+/// no se rinde: la siguiente ruta sigue en carrera y gana la del dispositivo correcto.
+#[test]
+fn ruta_suplantada_no_bloquea_la_siguiente() {
+    use mobilemesh_core::{identity::{Plain, from_hex}, transport::Session};
+    let crear = |n: &str| {
+        let d = std::env::temp_dir().join(format!("mm-carrera-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        mobilemesh_core::Identity::create(&d, &Plain).unwrap()
+    };
+    let (yo, otro, bueno) = (crear("yo"), crear("otro"), crear("bueno"));
+    let escuchar = |id: mobilemesh_core::Identity| {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let a = l.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            if let Ok((s, _)) = l.accept() {
+                let _ = Session::accept(s, &id);
+            }
+        });
+        a
+    };
+    let ruta = format!("{}|{}", escuchar(otro), escuchar(bueno.clone()));
+    let s = Session::connect(&ruta, &yo, &from_hex(&bueno.id()).unwrap()).expect("debió ganar la segunda ruta");
+    assert_eq!(s.peer, from_hex(&bueno.id()).unwrap());
+}

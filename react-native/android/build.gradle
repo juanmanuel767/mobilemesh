@@ -1,0 +1,24 @@
+// Puente de MobileMesh para React Native. El SDK de Android llega ya compilado desde JitPack.
+apply plugin: "com.android.library"
+apply plugin: "org.jetbrains.kotlin.android"
+
+// JitPack para todo el proyecto: así la app que instala el puente no tiene que tocar nada.
+// mavenLocal primero: para probar una versión del SDK compilada en este PC antes de publicarla.
+rootProject.allprojects { repositories { mavenLocal(); maven { url "https://jitpack.io" } } }
+
+android {
+    namespace "org.mobilemesh.reactnative"
+    compileSdk rootProject.ext.has("compileSdkVersion") ? rootProject.ext.compileSdkVersion : 36
+    defaultConfig {
+        minSdk 28 // lo exige el SDK de MobileMesh (Keystore)
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "com.facebook.react:react-android"
+    implementation "com.github.juanmanuel767:mobilemesh:v0.1.5"
+}

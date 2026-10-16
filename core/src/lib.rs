@@ -8,6 +8,7 @@ pub mod funciones;
 pub mod guardian;
 pub mod identity;
 pub mod net;
+pub mod nombres;
 pub mod recovery;
 pub mod relay;
 pub mod replica;
@@ -228,9 +229,13 @@ pub fn serve(store: &Store, me: &Identity, stream: impl net::Conn + 'static) -> 
     // Un guardián acepta a cualquiera, pero solo para copias y códigos de cuenta: mensajes y
     // archivos de desconocidos llenarían su disco (auditoría de las piezas nuevas).
     let solo_guardian = guardian::is_guardian(store)?;
+    let solo_nombres = nombres::is_guide(store)?;
     while let Some(frame) = s.recv()? {
         if solo_guardian && !guardian::allowed(&frame) {
             return Err("un guardián solo guarda copias y códigos de cuenta".into());
+        }
+        if solo_nombres && !nombres::allowed(&frame) {
+            return Err("una guía de nombres solo atiende nombres".into());
         }
         match frame {
             Frame::KeysReq => {
@@ -303,6 +308,10 @@ pub fn serve(store: &Store, me: &Identity, stream: impl net::Conn + 'static) -> 
             Frame::ReplicaDel => replica::on_delete(&mut s, store, &peer)?,
             Frame::CuentaPut { id, code } => guardian::on_put(&mut s, store, &peer, &id, &code)?,
             Frame::CuentaGet { id } => guardian::on_get(&mut s, store, &peer, &id)?,
+            Frame::NombrePut { nombre, invitacion } => nombres::on_put(&mut s, store, &peer, &nombre, &invitacion)?,
+            Frame::NombreGet { nombre } => nombres::on_get(&mut s, store, &peer, &nombre)?,
+            Frame::NombreSolicitar { nombre } => nombres::on_request(&mut s, store, &peer, &nombre)?,
+            Frame::NombreSolicitudes => nombres::on_requests(&mut s, store, &peer)?,
             Frame::Chunk { id, .. } if rejected.as_ref() == Some(&id) => {}
             Frame::Chunk { id, index, data } => {
                 let Some((fid, meta, part)) = &incoming else { return Err("trozo de archivo inesperado".into()) };

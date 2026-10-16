@@ -16,6 +16,9 @@ const MAX: usize = 65535; // límite de un paquete Noise
 const TIMEOUT: Duration = Duration::from_secs(10);
 /// Si hay otra ruta (relé) detrás, la directa no espera tanto.
 const SHORT: Duration = Duration::from_secs(3);
+/// Ventaja de cada ruta sobre la siguiente en la carrera de `Session::connect` (en la misma wifi
+/// la directa conecta en milisegundos y el relé ni arranca).
+const VENTAJA: Duration = Duration::from_millis(400);
 /// Los paquetes se rellenan hasta un múltiplo de este tamaño.
 pub const PAD: usize = 512;
 
@@ -137,6 +140,14 @@ pub enum Frame {
     CuentaPut { id: String, code: String },
     CuentaGet { id: String },
     Cuenta { code: Option<String> },
+    /// Guía de nombres: «registra mi nombre» / «¿invitación de este nombre?» / respuesta /
+    /// «avisa a este nombre de que quiero hablar con él» / «¿quién quiere hablar conmigo?» / lista.
+    NombrePut { nombre: String, invitacion: String },
+    NombreGet { nombre: String },
+    Nombre { invitacion: Option<String> },
+    NombreSolicitar { nombre: String },
+    NombreSolicitudes,
+    Solicitudes { lista: Vec<(String, String)> },
 }
 
 pub struct Session {
@@ -218,8 +229,57 @@ fn read_hs(s: &mut dyn Conn, deadline: Instant) -> Result<Vec<u8>> {
 }
 
 impl Session {
-    /// Conecta y exige que el otro dispositivo demuestre pertenecer a la cuenta `expect`.
+    /// Conecta y exige que el otro dispositivo demuestre pertenecer a la cuenta `expect`. Con varias
+    /// rutas («directa|relay=…») compiten escalonadas: la directa sale primero y cada siguiente
+    /// arranca `VENTAJA` después; gana la primera que completa el saludo. Si la directa la contesta
+    /// otro dispositivo (otra red con la misma IP privada), el relé sigue en carrera.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn connect(route: &str, me: &Identity, expect: &[u8]) -> Result<Session> {
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc};
+        let parts: Vec<String> = route.split('|').map(str::trim).filter(|p| !p.is_empty()).map(String::from).collect();
+        if parts.len() <= 1 {
+            return Self::connect_one(route, me, expect);
+        }
+        let (tx, rx) = mpsc::channel();
+        let ganada = Arc::new(AtomicBool::new(false));
+        let total = parts.len();
+        for (i, part) in parts.into_iter().enumerate() {
+            let (tx, me, expect, ganada) = (tx.clone(), me.clone(), expect.to_vec(), ganada.clone());
+            std::thread::spawn(move || {
+                std::thread::sleep(VENTAJA * i as u32);
+                let r = if ganada.load(Ordering::SeqCst) { Err("otra ruta ya conectó".into()) } else { Self::connect_one(&part, &me, &expect) };
+                if r.is_ok() {
+                    ganada.store(true, Ordering::SeqCst);
+                }
+                let _ = tx.send(r); // si ya ganó otra, esta sesión se suelta y se cierra
+            });
+        }
+        drop(tx);
+        let mut ultimo = None;
+        for r in rx.iter().take(total) {
+            match r {
+                Ok(s) => return Ok(s),
+                Err(e) => ultimo = Some(e),
+            }
+        }
+        Err(ultimo.unwrap_or_else(|| "no hay ninguna ruta para llegar a ese dispositivo".into()))
+    }
+
+    /// En el navegador no hay hilos: rutas en orden.
+    #[cfg(target_arch = "wasm32")]
+    pub fn connect(route: &str, me: &Identity, expect: &[u8]) -> Result<Session> {
+        let mut ultimo = None;
+        for part in route.split('|').map(str::trim).filter(|p| !p.is_empty()) {
+            match Self::connect_one(part, me, expect) {
+                Ok(s) => return Ok(s),
+                Err(e) => ultimo = Some(e),
+            }
+        }
+        Err(ultimo.unwrap_or_else(|| "no hay ninguna ruta para llegar a ese dispositivo".into()))
+    }
+
+    /// Conecta por una sola ruta y hace el saludo.
+    fn connect_one(route: &str, me: &Identity, expect: &[u8]) -> Result<Session> {
         let mut stream = open(route)?;
         let deadline = Instant::now() + HANDSHAKE;
         let mut hs = builder(me)?.build_initiator()?;

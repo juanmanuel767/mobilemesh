@@ -143,6 +143,23 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
 
     fun contactos(): List<String> = envolver { nucleo.contacts().map { it.name } }
 
+    // ---------- Usuarios por nombre (guía de nombres) ----------
+
+    /** Registra (o actualiza) mi nombre de usuario en la guía para que otros me encuentren. */
+    fun registrarNombre(usuario: String) = envolver { nucleo.registerName(usuario, invitacion()) }
+
+    /** ¿Existe este usuario? */
+    fun existeUsuario(usuario: String): Boolean = envolver { nucleo.findName(usuario) != null }
+
+    /** Añade a un usuario por su nombre y le avisa: su app me añadirá sola (ver `aceptarSolicitudes`). */
+    fun anadirPorNombre(usuario: String) = envolver { nucleo.addByName(usuario) }
+
+    /** Añade como contactos a quienes quieren hablar conmigo. Devuelve sus nombres. */
+    fun aceptarSolicitudes(): List<String> = envolver { nucleo.acceptRequests() }
+
+    /** Usa otra guía de nombres (su invitación), o la universal con `null`. */
+    fun usarGuiaDeNombres(invitacion: String?) = envolver { nucleo.useNameGuide(invitacion) }
+
     fun bloquear(contacto: String, bloqueado: Boolean = true) = envolver { nucleo.setBlocked(contacto, bloqueado) }
 
     // ---------- Mensajes y archivos ----------

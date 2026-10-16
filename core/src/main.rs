@@ -35,6 +35,11 @@ const USO: &str = "uso:
   mesh <carpeta> copia                              crear copia de recuperación (pide contraseña)
   mesh <carpeta> directorio                         buscar en mis relés relés y guardianes nuevos
   mesh <carpeta> guardian <ip:puerto> <ruta pública>   ser guardián: guardar códigos y copias cifradas de cualquiera
+  mesh <carpeta> nombres <ip:puerto> <ruta pública>    ser guía de nombres: registrar y buscar usuarios por nombre
+  mesh <carpeta> registrar-nombre <guía> <nombre> <mi ruta>   registrar mi nombre en una guía
+  mesh <carpeta> buscar-nombre <guía> <nombre>        invitación de un nombre
+  mesh <carpeta> pedir-contacto <guía> <nombre>       avisar a un nombre de que quiero hablar con él
+  mesh <carpeta> solicitudes <guía>                   añadir como contactos a quienes quieren hablar conmigo
   mesh <carpeta> guardar-cuenta <invitación> <usuario> guardar mi código en un guardián (pide contraseña)
   mesh <carpeta> buscar-cuenta <invitación> <usuario>  teléfono nuevo: recuperar la cuenta desde un guardián
   mesh <carpeta> restaurar <código>                 recuperar la cuenta (pide contraseña)
@@ -307,6 +312,44 @@ fn run() -> Result<()> {
                     eprintln!("conexión rechazada: {e}");
                 }
             });
+        }
+        ["nombres", addr, public] => {
+            let (me, store) = open()?;
+            mobilemesh_core::nombres::enable(&store)?;
+            drop(store);
+            let l = TcpListener::bind(addr)?;
+            println!("guía de nombres escuchando en {}", l.local_addr()?);
+            println!("invitación: {}", invite(&me, public));
+            mobilemesh_core::accept_loop(l, dir.to_path_buf(), me, || false, |r| {
+                if let Err(e) = r {
+                    eprintln!("conexión rechazada: {e}");
+                }
+            });
+        }
+        ["registrar-nombre", guia, nombre, ruta] => {
+            let (me, store) = open()?;
+            mobilemesh_core::nombres::register(&store, &me, guia, nombre, &invite(&me, ruta))?;
+            println!("nombre registrado: {nombre}");
+        }
+        ["buscar-nombre", guia, nombre] => {
+            let (me, store) = open()?;
+            println!("{}", mobilemesh_core::nombres::find(&store, &me, guia, nombre)?.unwrap_or_else(|| "no existe".into()));
+        }
+        ["pedir-contacto", guia, nombre] => {
+            let (me, store) = open()?;
+            let inv = mobilemesh_core::nombres::find(&store, &me, guia, nombre)?.ok_or("ese nombre no existe")?;
+            let (key, ruta) = parse_invite(&inv)?;
+            store.add_contact(nombre, &key, Some(&ruta))?;
+            mobilemesh_core::nombres::request(&store, &me, guia, nombre)?;
+            println!("contacto añadido y avisado: {nombre}");
+        }
+        ["solicitudes", guia] => {
+            let (me, store) = open()?;
+            for (nombre, inv) in mobilemesh_core::nombres::requests(&store, &me, guia)? {
+                let (key, ruta) = parse_invite(&inv)?;
+                store.add_contact(&nombre, &key, Some(&ruta))?;
+                println!("contacto añadido por solicitud: {nombre}");
+            }
         }
         ["guardar-cuenta", inv, user] => {
             let (me, store) = open()?;

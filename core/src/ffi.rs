@@ -232,6 +232,11 @@ const GUARDIAN: &str = "guardián";
 
 /// Guardián universal: el primero del directorio (o de la lista fija, en un teléfono nuevo sin
 /// directorio, después de intentar descargarlo de los relés universales).
+/// Guía de nombres: la elegida con `use_name_guide` o la universal.
+fn name_guide(store: &Store) -> R<String> {
+    store.setting("guia_elegida")?.or_else(|| crate::nombres::UNIVERSALES.first().map(|g| g.to_string())).ok_or_else(|| fail("no hay ninguna guía de nombres configurada"))
+}
+
 fn universal_guardian(store: Option<&Store>) -> R<(String, String)> {
     let list = match store {
         Some(s) => crate::directorio::guardianes(s),
@@ -345,6 +350,53 @@ impl Mesh {
         let store = Store::open(&self.dir, self.me.db_key())?;
         let (key, route) = universal_guardian(Some(&store))?;
         Ok(crate::guardian::save_account(&store, &self.me, &route, &key, &user, &pass)?)
+    }
+
+    // ---------- Guía de nombres ----------
+
+    /// Elige la guía de nombres (su invitación), o vuelve a la universal con `None`.
+    pub fn use_name_guide(&self, invitation: Option<String>) -> R<()> {
+        if let Some(i) = &invitation {
+            crate::parse_invite(i)?;
+        }
+        Ok(Store::open(&self.dir, self.me.db_key())?.set_setting("guia_elegida", invitation.as_deref())?)
+    }
+
+    /// Registra mi nombre de usuario con mi invitación (llamarlo de nuevo actualiza la invitación).
+    pub fn register_name(&self, name: String, invitation: String) -> R<()> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        Ok(crate::nombres::register(&store, &self.me, &name_guide(&store)?, &name, &invitation)?)
+    }
+
+    /// Invitación de un nombre de usuario, si existe.
+    pub fn find_name(&self, name: String) -> R<Option<String>> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        Ok(crate::nombres::find(&store, &self.me, &name_guide(&store)?, &name)?)
+    }
+
+    /// Añade a un usuario por su nombre y le avisa (su app me añadirá sola al ver la solicitud).
+    pub fn add_by_name(&self, name: String) -> R<()> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        let guia = name_guide(&store)?;
+        let name = crate::nombres::normalize(&name)?;
+        let inv = crate::nombres::find(&store, &self.me, &guia, &name)?.ok_or_else(|| fail(format!("no existe el usuario «{name}»")))?;
+        let (key, route) = crate::parse_invite(&inv)?;
+        store.add_contact(&name, &key, Some(&route))?;
+        Ok(crate::nombres::request(&store, &self.me, &guia, &name)?)
+    }
+
+    /// Añade como contactos a quienes pidieron hablar conmigo. Devuelve sus nombres.
+    pub fn accept_requests(&self) -> R<Vec<String>> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        let mut nuevos = vec![];
+        for (name, inv) in crate::nombres::requests(&store, &self.me, &name_guide(&store)?)? {
+            let Ok((key, route)) = crate::parse_invite(&inv) else { continue };
+            // Si el nombre ya es de otro contacto (otra clave), se deja como está.
+            if store.contact_key(&name)?.is_none_or(|k| k == key) && store.add_contact(&name, &key, Some(&route)).is_ok() {
+                nuevos.push(name);
+            }
+        }
+        Ok(nuevos)
     }
 
     /// Código corto de este dispositivo.
