@@ -11,6 +11,7 @@ import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import org.json.JSONArray
 import org.json.JSONObject
+import org.mobilemesh.sdk.CopiaAutomatica
 import org.mobilemesh.sdk.EstadoCuenta
 import org.mobilemesh.sdk.MobileMesh
 import org.mobilemesh.sdk.Permisos
@@ -145,7 +146,7 @@ class MobileMeshModule(private val ctx: ReactApplicationContext) : ReactContextB
 
     @ReactMethod
     fun enviar(contacto: String, texto: String, p: Promise) =
-        trabajar(p) { m().nucleo.send(contacto, texto).let { if (it.inMailbox) "en buzón" else "entregado" } }
+        trabajar(p) { m().nucleo.send(contacto, texto).let { CopiaAutomatica.cambio(ctx); if (it.inMailbox) "en buzón" else "entregado" } }
 
     @ReactMethod
     fun mensajes(p: Promise) = trabajar(p) {

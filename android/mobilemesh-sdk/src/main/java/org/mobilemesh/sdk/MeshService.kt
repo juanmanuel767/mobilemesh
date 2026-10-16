@@ -166,6 +166,7 @@ object Avisos {
 
     fun mensajeNuevo(c: Context, count: Int) {
         android.os.Handler(c.mainLooper).post { MeshHolder.oyentes.forEach { it(count) } }
+        CopiaAutomatica.cambio(c)
         val nm = c.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("mensajes", "Mensajes nuevos", NotificationManager.IMPORTANCE_HIGH))
         val from = MeshHolder.mesh?.messages()?.lastOrNull { !it.outgoing }?.peer ?: "un contacto"
@@ -244,28 +245,49 @@ class DespertadorReceiver : BroadcastReceiver() {
 
 /**
  * Copia automática: vuelve a subir la copia cifrada (contactos, mensajes y datos) a quien la guarda
- * —el guardián, si se usó `protegerConGuardian`— como mucho cada `CADA_HORAS`, al abrir la app y en
- * los despertares. Así, al formatear o perder el teléfono, se recupera lo hablado hasta hace poco y
- * no solo hasta el día del registro. Sin nadie que guarde la copia, no hace nada.
+ * —el guardián, si se usó `protegerConGuardian`—. Tras cada cambio (mensaje enviado o recibido, dato
+ * guardado) se hace al minuto, como mucho cada `HUECO_MIN` minutos; y aunque no haya cambios, cada
+ * `CADA_HORAS`. Si el proceso muere antes, el despertador la hace en su siguiente vuelta. Así, al
+ * formatear o perder el teléfono, se recupera lo hablado hasta hace un par de minutos. Sin nadie
+ * que guarde la copia, no hace nada.
  */
 object CopiaAutomatica {
-    // ponytail: intervalo fijo; hacerlo configurable si una app lo pide.
     const val CADA_HORAS = 6
+    const val HUECO_MIN = 2 // el guardián admite 20 copias por minuto: de sobra
+    private const val ESPERA_MS = 60_000L
     private val enMarcha = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val programada = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private fun prefs(c: Context) = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)
+
+    /** Hubo un cambio: la copia se hará en un minuto (varios cambios seguidos, una sola copia). */
+    fun cambio(c: Context) {
+        val app = c.applicationContext
+        prefs(app).edit().putBoolean("copia_pendiente", true).apply()
+        if (!programada.compareAndSet(false, true)) return
+        Thread {
+            Thread.sleep(ESPERA_MS)
+            programada.set(false)
+            siToca(app)
+        }.start()
+    }
 
     fun siToca(c: Context) {
-        val prefs = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)
-        val ahora = System.currentTimeMillis()
-        if (ahora - prefs.getLong("ultima_copia", 0) < CADA_HORAS * 3_600_000L) return
-        val m = MeshHolder.mesh ?: return
-        if (!enMarcha.compareAndSet(false, true)) return
+        val p = prefs(c)
+        val edad = System.currentTimeMillis() - p.getLong("ultima_copia", 0)
+        val toca = (p.getBoolean("copia_pendiente", false) && edad >= HUECO_MIN * 60_000L) || edad >= CADA_HORAS * 3_600_000L
+        val m = MeshHolder.mesh
+        if (!toca || m == null || !enMarcha.compareAndSet(false, true)) return
         Thread {
+            // Se marca antes de copiar: un cambio durante la copia la vuelve a dejar pendiente.
+            p.edit().putBoolean("copia_pendiente", false).apply()
             try {
-                // Falla si nadie guarda la copia («elige primero…») o sin red: se reintenta más tarde.
                 m.backupNow()
-                prefs.edit().putLong("ultima_copia", ahora).apply()
+                p.edit().putLong("ultima_copia", System.currentTimeMillis()).apply()
                 android.util.Log.i("MobileMesh", "copia automática hecha")
             } catch (e: Exception) {
+                // Nadie guarda la copia («elige primero…») o sin red: queda pendiente.
+                p.edit().putBoolean("copia_pendiente", true).apply()
                 android.util.Log.i("MobileMesh", "copia automática pendiente: ${e.message}")
             } finally {
                 enMarcha.set(false)

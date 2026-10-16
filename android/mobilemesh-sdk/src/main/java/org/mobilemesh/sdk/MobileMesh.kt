@@ -126,6 +126,8 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
     /** Identificador público de la cuenta. */
     val miId: String get() = nucleo.id()
 
+    internal val contexto: Context get() = context
+
     fun coleccion(nombre: String, estricta: Boolean = false) = Coleccion(this, nombre, estricta)
 
     // ---------- Contactos ----------
@@ -170,7 +172,7 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
      * despertar (`enBuzon = true`); si no hay forma, queda pendiente y se reintenta solo.
      */
     fun enviarMensaje(contacto: String, texto: String, alTerminar: (Result<Envio>) -> Unit = {}) =
-        enSegundoPlano({ nucleo.send(contacto, texto).let { Envio(it.count.toInt(), it.inMailbox) } }, alTerminar)
+        enSegundoPlano({ nucleo.send(contacto, texto).let { Envio(it.count.toInt(), it.inMailbox) } }, alTerminar).also { CopiaAutomatica.cambio(context) }
 
     fun mensajes(): List<Mensaje> = envolver {
         nucleo.messages().map { Mensaje(it.id, it.peer, it.outgoing, it.body, it.status, it.fileName) }
@@ -183,7 +185,7 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
             try {
                 context.contentResolver.openInputStream(archivo)!!.use { input -> tmp.outputStream().use { input.copyTo(it) } }
                 val tipo = context.contentResolver.getType(archivo) ?: "application/octet-stream"
-                nucleo.sendFile(contacto, tmp.path, nombre, tipo).let { Envio(it.count.toInt(), it.inMailbox) }
+                nucleo.sendFile(contacto, tmp.path, nombre, tipo).let { Envio(it.count.toInt(), it.inMailbox) }.also { CopiaAutomatica.cambio(context) }
             } finally {
                 tmp.delete()
             }
@@ -281,6 +283,7 @@ class Coleccion internal constructor(private val mesh: MobileMesh, val nombre: S
     /** Guarda campos de un documento (texto, números, booleanos…). Un valor `null` borra ese campo. */
     fun guardar(id: String, campos: Map<String, Any?>) = MobileMesh.envolver {
         campos.forEach { (campo, valor) -> mesh.nucleo.put(nombre, id, campo, valor?.let { JSONArray().put(it).toString() }, estricta) }
+        CopiaAutomatica.cambio(mesh.contexto)
     }
 
     fun leer(id: String): Documento? = todos().firstOrNull { it.id == id }
