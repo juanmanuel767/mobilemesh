@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/img/logo.png" alt="MobileMesh: base de datos local en tus dispositivos" width="320"></p>
+
 # MobileMesh
 
 Backend de código abierto donde **los propios dispositivos guardan sus datos** y se comunican directamente y cifrados, sin base de datos central obligatoria. Pensado para usarse **en lugar de Firebase o Supabase**.
