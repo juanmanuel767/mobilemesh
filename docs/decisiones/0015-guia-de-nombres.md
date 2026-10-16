@@ -26,5 +26,6 @@ Qué nombres existen, sus invitaciones (direcciones IP y relé), quién pide hab
 
 ## Pendiente
 
-- Publicar la guía del nubia y ponerla en `nombres::UNIVERSALES` (y en el directorio firmado).
+- Ponerla también en el directorio firmado (hoy va fija en `nombres::UNIVERSALES`: la del nubia,
+  app «Relé MobileMesh», puerto 7955, abierto en el router por UPnP).
 - Aviso inmediato de solicitudes (hoy las apps preguntan cada 15 s con la app abierta).

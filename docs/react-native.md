@@ -65,5 +65,4 @@ minuto después de cada cambio: al formatear, «entrar» o «entrarConCodigo» l
 
 ## Pendiente
 
-- La guía de nombres universal (en el nubia): mientras, cada app la elige con `usarGuiaDeNombres`.
 - iPhone.

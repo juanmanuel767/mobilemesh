@@ -37,6 +37,9 @@ private val ARGS = listOf("0.0.0.0:$PUERTO", "--max", "5000", "--limite", "500",
 /** Guardián (pieza aparte: su programa, su carpeta, su puerto y su registro). */
 private const val PUERTO_GUARDIAN = 7954
 
+/** Guía de nombres (pieza aparte: usuarios por nombre, como en cualquier base de datos). */
+private const val PUERTO_NOMBRES = 7955
+
 /** Relés universales a los que preguntar «¿con qué IP me ves?» para saber mi IP pública. */
 private val RELES_QUIEN = listOf("mobilemeshjuan.duckdns.org" to 7900)
 
@@ -59,7 +62,7 @@ class ReleService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("rele", "Relé", NotificationManager.IMPORTANCE_LOW))
         val n = Notification.Builder(this, "rele").setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("Relé de MobileMesh en marcha").setContentText("Relé 7900 · Web 7901 · Guardián 7954").setOngoing(true).build()
+            .setContentTitle("Relé de MobileMesh en marcha").setContentText("Relé 7900 · Web 7901 · Guardián 7954 · Nombres 7955").setOngoing(true).build()
         startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         // Sin estos dos, con la pantalla apagada Android duerme la CPU y la wifi.
         getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "rele:cpu").acquire()
@@ -84,21 +87,33 @@ class ReleService : Service() {
             hilo {
                 // La primera vez crea la identidad del guardián (si ya existe, no hace nada).
                 runCatching { ProcessBuilder(mesh, dirGuardian, "init").redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.appendTo(guardian)).start().waitFor() }
-                // Ruta pública para su invitación: la de ruta-publica.txt (p. ej. un nombre de
-                // DuckDNS) o mi IP pública según un relé. Sin ella se reintenta cada 30 s.
-                var ruta: String? = null
-                while (ruta == null) {
-                    ruta = File(filesDir, "ruta-publica.txt").takeIf { it.exists() }?.readText()?.trim()?.ifEmpty { null }
-                        ?: duckdnsDominio()?.let { "$it:$PUERTO_GUARDIAN" }
-                        ?: ipPublica()?.let { "$it:$PUERTO_GUARDIAN" }
-                    if (ruta == null) Thread.sleep(30_000)
-                }
-                vigilar("guardián", listOf(mesh, dirGuardian, "guardian", "0.0.0.0:$PUERTO_GUARDIAN", ruta), guardian)
+                vigilar("guardián", listOf(mesh, dirGuardian, "guardian", "0.0.0.0:$PUERTO_GUARDIAN", rutaPublica(PUERTO_GUARDIAN)), guardian)
             }
             hilo { puerto(PUERTO_GUARDIAN, guardian) }
+            val nombres = File(filesDir, "nombres.log")
+            val dirNombres = File(filesDir, "nombres").path
+            hilo {
+                runCatching { ProcessBuilder(mesh, dirNombres, "init").redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.appendTo(nombres)).start().waitFor() }
+                vigilar("guía de nombres", listOf(mesh, dirNombres, "nombres", "0.0.0.0:$PUERTO_NOMBRES", rutaPublica(PUERTO_NOMBRES)), nombres)
+            }
+            hilo { puerto(PUERTO_NOMBRES, nombres) }
             hilo { duckdns(rele) }
         }
         return START_STICKY
+    }
+
+    /**
+     * Ruta pública de una pieza para su invitación: la de ruta-publica.txt (cambiando el puerto), el
+     * nombre de DuckDNS o mi IP pública según un relé. Sin ninguna, espera y reintenta cada 30 s.
+     */
+    private fun rutaPublica(puerto: Int): String {
+        while (true) {
+            val host = File(filesDir, "ruta-publica.txt").takeIf { it.exists() }?.readText()?.trim()?.ifEmpty { null }?.substringBeforeLast(':')
+                ?: duckdnsDominio()
+                ?: ipPublica()
+            if (host != null) return "$host:$puerto"
+            Thread.sleep(30_000)
+        }
     }
 
     /** Pide al router (UPnP) que abra el puerto hacia este móvil; se renueva cada 30 min, así sigue
@@ -179,7 +194,8 @@ class MainActivity : Activity() {
             textSize = 16f
             val invitacion = File(filesDir, "guardian.log").takeIf { it.exists() }?.readLines()?.lastOrNull { it.startsWith("invitación:") } ?: "invitación del guardián: todavía no"
             setTextIsSelectable(true)
-            text = "Relé (7900) y guardián (7954) de MobileMesh en marcha.\n\n$invitacion\n\nRelé:\n${ultimas("rele.log")}\n\nGuardián:\n${ultimas("guardian.log")}"
+            val guia = File(filesDir, "nombres.log").takeIf { it.exists() }?.readLines()?.lastOrNull { it.startsWith("invitación:") } ?: "invitación de la guía de nombres: todavía no"
+            text = "Relé (7900), guardián (7954) y guía de nombres (7955) de MobileMesh en marcha.\n\n$invitacion\n\n$guia\n\nRelé:\n${ultimas("rele.log")}\n\nGuardián:\n${ultimas("guardian.log")}\n\nGuía de nombres:\n${ultimas("nombres.log")}"
         })
     }
 }

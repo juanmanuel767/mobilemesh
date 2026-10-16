@@ -18,9 +18,9 @@ use crate::{
 use std::time::Duration;
 
 /// Guías que usa toda app que no elija la suya (invitación `mobilemesh:2:<clave>:<ruta>`).
-// ponytail: lista fija vacía hasta tener la invitación de la guía del nubia (puerto 7955);
-// mientras, cada app la elige con `use_name_guide`.
-pub const UNIVERSALES: &[&str] = &[];
+// ponytail: lista fija como la de relés y guardianes; directorio que se actualice solo si crece.
+// La primera es la del nubia de casa (app «Relé MobileMesh», puerto 7955).
+pub const UNIVERSALES: &[&str] = &["mobilemesh:2:1ae27549992df248c8856917f94a95cbda45219011716cebc68696600bf53369:mobilemeshjuan.duckdns.org:7955"];
 
 /// Solicitudes guardadas como máximo por destinatario (las más viejas se descartan).
 pub const MAX_SOLICITUDES: usize = 50;
