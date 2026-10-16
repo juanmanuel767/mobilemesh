@@ -2,6 +2,24 @@
 
 # MobileMesh
 
+<p align="center"><b>🔒 La base de datos que NO vive en la nube.</b><br>Tus datos se quedan en tus dispositivos. Alternativa gratis a Firebase y Supabase.</p>
+
+¿Cuántas veces has leído *«se filtraron los datos de millones de usuarios»*? Pasa porque todo se guarda en un mismo servidor en la nube: un solo fallo y se lo llevan todo. MobileMesh funciona al revés:
+
+| | |
+|---|---|
+| ☁️❌ **Nada vive en la nube** | Los datos de tu app se guardan cifrados en los dispositivos de tus usuarios: móvil, tablet o navegador. |
+| 🛡️ **No hay un servidor central que hackear** | No existe una gran base de datos con la información de todos. Para robar los datos de un usuario habría que robarle el móvil… y aun así están cifrados. |
+| 🔐 **Cifrado de extremo a extremo, como Signal** | Ni el creador, ni los relés que conectan los móviles, ni nadie en medio puede leer nada. |
+| 📶 **Funciona sin internet** | La app sigue funcionando sin conexión y se sincroniza sola al volver. |
+| 💸 **Gratis de verdad** | Sin facturas por usuarios, lecturas o almacenamiento: los datos no ocupan servidores. |
+| 📱 **Si pierdes el móvil, no pierdes nada** | Recuperas tu cuenta y tus datos con usuario y contraseña. |
+| 🧑‍💻 **Para programadores** | SDK para Android y web, y servidor MCP para que una IA (Claude, ChatGPT) cree apps con él. |
+
+Es un proyecto joven. Si te gusta, pruébalo, déjale una ⭐ y cuéntanos qué mejorarías.
+
+---
+
 Backend de código abierto donde **los propios dispositivos guardan sus datos** y se comunican directamente y cifrados, sin base de datos central obligatoria. Pensado para usarse **en lugar de Firebase o Supabase**.
 
 Creado por **Juan Manuel Peralta Chacon** ([@juanmanuel767](https://github.com/juanmanuel767)).
