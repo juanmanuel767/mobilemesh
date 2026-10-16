@@ -49,6 +49,7 @@ pub fn terminate(tcp: TcpStream, cfg: Arc<ServerConfig>, plain: SocketAddr) -> R
     // Lecturas cortas: así quien escribe no espera más de 20 ms a que se suelte el candado.
     tls.sock.set_read_timeout(Some(Duration::from_millis(20)))?;
     let interior = TcpStream::connect_timeout(&plain, Duration::from_secs(5))?;
+    interior.set_nodelay(true)?;
     let (mut interior_r, mut interior_w) = (interior.try_clone()?, interior);
     let tls = Arc::new(Mutex::new(tls));
     // El lector suelta y vuelve a coger el candado sin parar: sin este aviso, quien escribe podía

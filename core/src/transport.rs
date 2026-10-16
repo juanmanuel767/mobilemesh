@@ -36,7 +36,9 @@ pub fn open(route: &str) -> Result<Stream> {
                 .map_err(Into::into)
                 .and_then(|mut a| a.next().ok_or_else(|| "dirección no válida".into()))
                 .and_then(|a| match reachable(&a) {
-                    true => TcpStream::connect_timeout(&a, wait).map(|t| Box::new(t) as Stream).map_err(Into::into),
+                    true => TcpStream::connect_timeout(&a, wait)
+                        .and_then(|t| t.set_nodelay(true).map(|_| Box::new(t) as Stream))
+                        .map_err(Into::into),
                     false => Err("dirección privada de otra red".into()),
                 }),
         };
@@ -144,9 +146,13 @@ fn builder(me: &Identity) -> Result<snow::Builder<'_>> {
     Ok(snow::Builder::new(NOISE.parse()?).local_private_key(&me.private)?.prologue(PROLOGUE)?)
 }
 
+/// Tamaño + paquete en UNA sola escritura: en dos, TCP retenía el segundo trozo esperando la
+/// confirmación del primero (algoritmo de Nagle + ACK retardado), ≈ 40 ms por paquete (medido).
 fn write_raw(s: &mut dyn Conn, b: &[u8]) -> Result<()> {
-    s.write_all(&(b.len() as u16).to_be_bytes())?;
-    s.write_all(b)?;
+    let mut paquete = Vec::with_capacity(2 + b.len());
+    paquete.extend_from_slice(&(b.len() as u16).to_be_bytes());
+    paquete.extend_from_slice(b);
+    s.write_all(&paquete)?;
     Ok(())
 }
 

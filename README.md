@@ -27,7 +27,7 @@ En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
 ```kotlin
 dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
 
-dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.1") }
+dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.2") }
 ```
 
 ```kotlin

@@ -41,7 +41,10 @@ impl Conn for Stream {
 pub fn connect(addr: &str, wait: Duration) -> Result<Stream> {
     use std::net::ToSocketAddrs;
     let a = addr.to_socket_addrs()?.next().ok_or("dirección no válida")?;
-    Ok(Box::new(TcpStream::connect_timeout(&a, wait)?))
+    let s = TcpStream::connect_timeout(&a, wait)?;
+    // Sin esperas de Nagle: las órdenes cortas del relé salen al momento.
+    s.set_nodelay(true)?;
+    Ok(Box::new(s))
 }
 
 /// En el navegador: WebSocket hacia el puente del relé.

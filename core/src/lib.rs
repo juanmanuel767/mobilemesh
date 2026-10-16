@@ -146,6 +146,7 @@ pub fn accept_loop(
 ) {
     let done = std::sync::Arc::new(done);
     for stream in listener.incoming().flatten() {
+        let _ = stream.set_nodelay(true);
         if pause() {
             continue; // se cierra sin contestar
         }

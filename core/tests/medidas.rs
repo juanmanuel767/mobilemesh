@@ -53,12 +53,19 @@ fn counted(bob: &(PathBuf, Identity)) -> (String, Arc<AtomicUsize>, thread::Join
     (front_addr, bytes, h)
 }
 
+/// Tamaño de la base tras pasar al archivo principal lo que está en el diario WAL.
+fn db_size(dir: &std::path::Path) -> u64 {
+    let db = rusqlite::Connection::open(dir.join("mesh.db")).unwrap();
+    db.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(())).unwrap();
+    std::fs::metadata(dir.join("mesh.db")).unwrap().len()
+}
+
 #[test]
 fn medidas() {
     let (alice, bob) = (device("alice"), device("bob"));
     st(&alice).add_contact("bob", &bob.1.id(), None).unwrap();
     st(&bob).add_contact("alice", &alice.1.id(), None).unwrap();
-    let db_before = std::fs::metadata(bob.0.join("mesh.db")).unwrap().len();
+    let db_before = db_size(&bob.0);
 
     // 1) Primera conexión con un mensaje (incluye saludo y apertura del ratchet).
     let store = st(&alice);
@@ -76,7 +83,7 @@ fn medidas() {
     deliver(&store, &alice.1, &bob.1.id(), &addr).unwrap();
     h.join().unwrap();
     let fifty = bytes.load(Ordering::Relaxed);
-    let db_after = std::fs::metadata(bob.0.join("mesh.db")).unwrap().len();
+    let db_after = db_size(&bob.0);
 
     // 3) Un archivo de 1 MB.
     let src = alice.0.join("1mb.bin");

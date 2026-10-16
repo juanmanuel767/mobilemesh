@@ -28,6 +28,7 @@ pub fn serve(listener: TcpListener, relay: SocketAddr, tls: Option<(String, Stri
     let yo = listener.local_addr().map(|a| SocketAddr::from(([127, 0, 0, 1], a.port())));
     let por_ip: Arc<Mutex<HashMap<IpAddr, usize>>> = Arc::default();
     for stream in listener.incoming().flatten() {
+        let _ = stream.set_nodelay(true);
         let Ok(ip) = stream.peer_addr().map(|a| a.ip()) else { continue };
         {
             let mut m = por_ip.lock().unwrap_or_else(|e| e.into_inner());
@@ -67,6 +68,7 @@ fn bridge(mut web: TcpStream, relay: SocketAddr) -> Result<()> {
     handshake(&mut web)?;
     web.set_read_timeout(None)?;
     let tcp = TcpStream::connect_timeout(&relay, WAIT)?;
+    tcp.set_nodelay(true)?;
     let (mut web_r, mut tcp_w) = (web.try_clone()?, tcp.try_clone()?);
     let (mut tcp_r, mut web_w) = (tcp, web);
     // Navegador → relé: mensajes WebSocket → bytes.

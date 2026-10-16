@@ -164,8 +164,19 @@ impl Store {
     /// `key` viene de la identidad del dispositivo (protegida por Keystore).
     pub fn open(dir: &Path, key: [u8; 32]) -> Result<Store> {
         let db = Connection::open(dir.join("mesh.db"))?;
+        // Si otro (la app o su servicio) está escribiendo, esperar un poco en vez de fallar.
+        db.busy_timeout(std::time::Duration::from_secs(5))?;
         // Lo borrado se sobrescribe con ceros: no quedan restos del texto en el archivo.
         db.execute_batch("PRAGMA secure_delete = ON;")?;
+        // WAL: escribir y leer el doble de rápido (medido) y la app y su servicio pueden leer
+        // mientras el otro escribe. Igual de seguro ante apagones (synchronous sigue en FULL).
+        // En el navegador el almacén (OPFS) no lo admite: se queda el modo normal.
+        // Cambiar el modo exige la base en exclusiva: solo la primera vez (queda guardado en el
+        // archivo); si no, dos aperturas a la vez fallaban con «base ocupada» (lo vio una prueba).
+        #[cfg(not(target_arch = "wasm32"))]
+        if db.query_row("PRAGMA journal_mode", [], |r| r.get::<_, String>(0))? != "wal" {
+            db.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
+        }
         db.execute_batch(SCHEMA)?;
         // Todas las migraciones pendientes juntas y con la base reservada: dos aperturas a la vez
         // (la app y su servicio) no pueden aplicar dos veces la misma (encontrado en la auditoría).

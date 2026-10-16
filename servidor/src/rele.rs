@@ -95,6 +95,7 @@ impl Relay {
     /// Atiende conexiones para siempre.
     pub fn serve(&self, listener: TcpListener) {
         for stream in listener.incoming().flatten() {
+            let _ = stream.set_nodelay(true); // sin esperas de Nagle en las órdenes cortas
             let Ok(ip) = stream.peer_addr().map(|a| a.ip()) else { continue };
             {
                 let mut st = self.lock();

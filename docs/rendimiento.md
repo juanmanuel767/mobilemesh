@@ -12,13 +12,22 @@ cargo test --release --test medidas -- --nocapture     # tamaños en red y en di
 
 Valores de 3 repeticiones (mínimo – máximo).
 
-| Operación | Resultado |
-|---|---|
-| Escribir 1000 campos, uno a uno (cifrado + disco) | 403 – 479 ms (≈ 0,4 ms cada uno) |
-| Leer una colección de 1000 registros (descifrando) | 54 – 59 ms |
-| Consulta con filtro + orden + límite sobre 1000 | 55 – 63 ms |
-| Sincronizar 1000 cambios con otro dispositivo | 538 – 644 ms |
-| Entregar 50 mensajes cifrados de extremo a extremo, con confirmación de guardado | ≈ 89 ms cada uno (conexión incluida) |
+| Operación | Antes | Ahora |
+|---|---|---|
+| Escribir 1000 campos, uno a uno (cifrado + disco) | 403 – 479 ms | **184 – 217 ms** (≈ 0,2 ms cada uno) |
+| Leer una colección de 1000 registros (descifrando) | 54 – 59 ms | **29 – 34 ms** |
+| Consulta con filtro + orden + límite sobre 1000 | 55 – 63 ms | **30 – 37 ms** |
+| Sincronizar 1000 cambios con otro dispositivo | 538 – 644 ms | **280 – 375 ms** |
+| Entregar un mensaje cifrado de extremo a extremo, con confirmación de guardado | ≈ 89 ms | **≈ 1 ms** (50 mensajes en 42 – 51 ms) |
+
+### Qué se mejoró
+
+- **Mensajes, 89 veces más rápidos.** Cada paquete se enviaba en dos trozos (tamaño y contenido) y TCP
+  retenía el segundo ≈ 40 ms esperando la confirmación del primero (algoritmo de Nagle + ACK
+  retardado). Ahora va en una sola escritura y las conexiones no esperan (`TCP_NODELAY`).
+- **Base de datos, el doble de rápida.** SQLite en modo WAL: menos escrituras al disco, igual de
+  seguro ante apagones (`synchronous` sigue en `FULL`), y la app y su servicio pueden leer mientras
+  el otro escribe. En el navegador no aplica (su almacén OPFS no lo admite).
 
 ## Tamaños
 
@@ -43,10 +52,8 @@ Valores de 3 repeticiones (mínimo – máximo).
 | Relé en un móvil (nubia, Android 16) | 4 752 conexiones a la vez con 62 MB de memoria |
 | Aviso de mensaje nuevo, pantalla apagada 5 min (móvil cargando) | < 1 s |
 
-## Lo que aún es lento (y por qué)
+## Lo que aún puede mejorar
 
-- **Mensajes: ≈ 89 ms cada uno.** Cada mensaje se confirma solo después de guardarlo cifrado en el
-  disco del otro lado, y el ratchet guarda su estado en cada paso. Es el precio de no perder nunca un
-  mensaje; se puede mejorar agrupando escrituras.
-- **Escribir: ≈ 0,4 ms por campo.** Cada campo se cifra y se registra para sincronizarlo; una base sin
-  cifrar ni sincronización (SQLite a secas) es más rápida.
+- **Escribir: ≈ 0,2 ms por campo.** Cada campo se cifra y se registra para sincronizarlo; SQLite a
+  secas (sin cifrar ni sincronizar) es más rápido. Agrupar varios campos en una transacción lo
+  acercaría.
