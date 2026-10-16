@@ -2,8 +2,21 @@
 
 Backend de código abierto donde **los propios dispositivos guardan sus datos** y se comunican directamente y cifrados, sin base de datos central obligatoria. Pensado para usarse **en lugar de Firebase o Supabase**.
 
-**¿Eres programador?** Lee la [guía del SDK](docs/sdk.md) y mira el ejemplo [`examples/notas`](examples/notas).
+Creado por **Juan Manuel Peralta Chacon** ([@juanmanuel767](https://github.com/juanmanuel767)). Licencia [MIT](LICENSE).
 
+**¿Eres programador?**
+- Android: [guía del SDK](docs/sdk.md) y el ejemplo [`examples/notas`](examples/notas).
+- Web: [guía del SDK web](docs/sdk-web.md) (WebAssembly, funciona en páginas `https://`).
+- IA (Claude, ChatGPT…): [servidor MCP](docs/mcp.md).
+- ¿Quieres ayudar? [Dona un relé](docs/donar-un-rele.md) con un móvil viejo.
+
+```
+📱 Apps Android ─┐                         ┌─ Guardián: recuperar cuenta y datos
+                 ├─► Relés (directorio firmado) ─┤
+🌐 Apps web ─────┘   cifrado de extremo a extremo └─ Nadie puede leer los datos
+```
+
+- **Relés universales, guardián, directorio, candado y web:** [0012 guardián](docs/decisiones/0012-guardian.md) · [0013 directorio](docs/decisiones/0013-directorio.md) · [0014 auditoría de las piezas nuevas](docs/decisiones/0014-auditoria-piezas-nuevas.md)
 - Reglas y amenazas: [docs/fase-0.md](docs/fase-0.md)
 - Tecnologías elegidas: [docs/decisiones/0001-tecnologias.md](docs/decisiones/0001-tecnologias.md)
 - **Auditoría y lanzamiento (Fase 13):** [docs/decisiones/0011-auditoria.md](docs/decisiones/0011-auditoria.md) · [Protocolo](docs/protocolo.md) · [Dependencias y licencias](docs/dependencias.md)
@@ -27,7 +40,7 @@ Backend de código abierto donde **los propios dispositivos guardan sus datos** 
 
 ```sh
 cd core
-cargo test                      # 52 pruebas, entre ellas 9 ataques simulados (cargo test --release --test medidas -- --nocapture para las mediciones)
+cargo test                      # 68 pruebas, entre ellas 9 ataques simulados (cargo test --release --test medidas -- --nocapture para las mediciones)
 cargo build
 M=target/debug/mesh
 $M /tmp/ana init && $M /tmp/beto init
