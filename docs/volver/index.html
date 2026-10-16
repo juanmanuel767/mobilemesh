@@ -21,7 +21,7 @@
   const app = q.get("app") || "";
   const texto = document.getElementById("texto");
   // Solo un esquema de app sencillo: nada de javascript:, http:, data:… (no es un redirector abierto).
-  if (/^[a-z][a-z0-9.+-]{1,30}$/.test(app) && !/^(javascript|vbscript|data|file|https?|blob|about)$/.test(app)) {
+  if (/^[a-z][a-z0-9.+-]{1,60}$/.test(app) && !/^(javascript|vbscript|data|file|https?|blob|about)$/.test(app)) {
     q.delete("app");
     const destino = `${app}://pago${q.toString() ? "?" + q : ""}`;
     location.replace(destino);
