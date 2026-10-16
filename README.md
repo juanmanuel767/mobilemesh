@@ -27,7 +27,7 @@ En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
 ```kotlin
 dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
 
-dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.4") }
+dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.5") }
 ```
 
 ```kotlin
@@ -35,6 +35,23 @@ val mesh = MobileMesh.iniciar(this)   // crea la cuenta la primera vez
 ```
 
 Nada más: el núcleo en Rust ya va dentro (teléfonos de 64 bits, `arm64-v8a`). [Guía del SDK de Android](docs/sdk.md).
+
+## 🚀 Empieza en 1 minuto (React Native)
+
+```sh
+npm install github:juanmanuel767/mobilemesh#v0.1.5
+```
+
+```js
+import MobileMesh from "react-native-mobilemesh";
+await MobileMesh.iniciar();
+await MobileMesh.registrar("ana", "contraseña-larga");   // usuarios por nombre, sin correo ni teléfono
+await MobileMesh.anadirPorNombre("juan");
+await MobileMesh.enviar("juan", "hola");                 // chat cifrado en tiempo real
+```
+
+Android (`minSdkVersion = 28`). Archivos, base de datos, avisos, recuperar la cuenta y pagos con
+Wompi en una línea: [guía de React Native](docs/react-native.md).
 
 ## 🚀 Empieza en 1 minuto (web)
 

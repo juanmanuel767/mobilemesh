@@ -3,8 +3,7 @@ apply plugin: "com.android.library"
 apply plugin: "org.jetbrains.kotlin.android"
 
 // JitPack para todo el proyecto: así la app que instala el puente no tiene que tocar nada.
-// mavenLocal primero: para probar una versión del SDK compilada en este PC antes de publicarla.
-rootProject.allprojects { repositories { mavenLocal(); maven { url "https://jitpack.io" } } }
+rootProject.allprojects { repositories { maven { url "https://jitpack.io" } } }
 
 android {
     namespace "org.mobilemesh.reactnative"
