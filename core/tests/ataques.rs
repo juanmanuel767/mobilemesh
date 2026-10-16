@@ -1,6 +1,7 @@
 //! Fase 13: ataques simulados. Ninguno debe colgar, romper (pánico) ni colar nada.
 
-use mobilemesh_core::{Identity, Store, identity::Plain, relay::Relay, serve};
+use mobilemesh_core::{Identity, Store, identity::Plain, serve};
+use mobilemesh_servidor::Relay;
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},

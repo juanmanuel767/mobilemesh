@@ -2,7 +2,9 @@
 
 Backend de código abierto donde **los propios dispositivos guardan sus datos** y se comunican directamente y cifrados, sin base de datos central obligatoria. Pensado para usarse **en lugar de Firebase o Supabase**.
 
-Creado por **Juan Manuel Peralta Chacon** ([@juanmanuel767](https://github.com/juanmanuel767)). Licencia [MIT](LICENSE).
+Creado por **Juan Manuel Peralta Chacon** ([@juanmanuel767](https://github.com/juanmanuel767)).
+
+**Licencias:** el núcleo y los SDK (`core/`, `android/mobilemesh-sdk`, `web/`) son [MIT](LICENSE): úsalos en cualquier app, también de pago. Los programas de servidor (`servidor/`: relé, puente web y candado; `android/rele-movil`) son [AGPL-3.0](servidor/LICENSE): si los ofreces como servicio modificados, publica tus cambios.
 
 **¿Eres programador?**
 - Android: [guía del SDK](docs/sdk.md) y el ejemplo [`examples/notas`](examples/notas).

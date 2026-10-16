@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Juan Manuel Peralta Chacon (GitHub: juanmanuel767)
 //! `mesh-rele`: relé de MobileMesh que cualquiera puede ejecutar (en casa, en un servidor…).
 //! Solo empalma conexiones cifradas: no puede leerlas, no guarda nada y no escribe registros.
 
-use mobilemesh_core::relay::Relay;
+use mobilemesh_servidor::Relay;
 use std::{net::TcpListener, process::exit};
 
 /// Uso: `mesh-rele [ip:puerto] [--avisos <programa>] [--max <conexiones>] [--directorio <archivo>] [--limite <KB/s>] [--websocket <ip:puerto>] [--tls <cert.pem> <clave.pem>]`.
@@ -35,7 +37,7 @@ fn main() {
                 if tls.is_some() {
                     println!("con candado (wss://) en el mismo puerto");
                 }
-                std::thread::spawn(move || mobilemesh_core::websocket::serve(l, relay, tls));
+                std::thread::spawn(move || mobilemesh_servidor::websocket::serve(l, relay, tls));
             }
             _ => {
                 eprintln!("no se pudo abrir {ws} para WebSocket");

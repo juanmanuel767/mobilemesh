@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Juan Manuel Peralta Chacon (GitHub: juanmanuel767)
 //! Puente WebSocket del relé (pieza aparte): los navegadores no pueden abrir conexiones TCP, solo
 //! WebSocket. Este puente acepta WebSocket en otro puerto y pasa los bytes tal cual a una conexión
 //! TCP con el relé de siempre. El relé no cambia y el contenido sigue cifrado de extremo a extremo.
 
-use crate::Result;
+use mobilemesh_core::Result;
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use std::{
     collections::HashMap,

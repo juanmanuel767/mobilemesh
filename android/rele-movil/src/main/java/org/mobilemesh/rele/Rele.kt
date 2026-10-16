@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Juan Manuel Peralta Chacon (GitHub: juanmanuel767)
 package org.mobilemesh.rele
 
 import android.annotation.SuppressLint

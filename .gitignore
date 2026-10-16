@@ -15,3 +15,4 @@ examples/notas/.gradle/
 android/rele-movil/build/
 # Programas compilados que lleva la app del relé: se generan con android/rele-movil/construir.sh
 android/rele-movil/src/main/jniLibs/
+servidor/target/

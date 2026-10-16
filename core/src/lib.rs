@@ -13,8 +13,6 @@ pub mod relay;
 pub mod replica;
 pub mod store;
 pub mod sync;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod tls;
 pub mod transport;
 pub mod upnp;
 /// Reloj: el de std en móvil y PC; en el navegador, el del navegador (std no tiene reloj allí).
@@ -24,7 +22,6 @@ pub(crate) use std::time as tiempo;
 pub(crate) use web_time as tiempo;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
-pub mod websocket;
 #[cfg(not(target_arch = "wasm32"))]
 mod ffi;
 

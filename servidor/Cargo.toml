@@ -1,0 +1,17 @@
+[package]
+name = "mobilemesh-servidor"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+description = "Programas de servidor de MobileMesh: relé, puente web (WebSocket) y candado (wss)."
+
+[dependencies]
+mobilemesh-core = { path = "../core" }
+base64 = "0.23.1"
+ed25519-dalek = "2"
+getrandom = "0.3"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
+[[bin]]
+name = "mesh-rele"
+path = "src/bin/mesh-rele.rs"

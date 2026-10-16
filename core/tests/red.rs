@@ -733,7 +733,8 @@ fn borrar_la_copia_se_reintenta_si_no_contesta() {
 
 // ---------- Fase 9: relé ----------
 
-use mobilemesh_core::relay::{self as rele, Relay};
+use mobilemesh_core::relay as rele;
+use mobilemesh_servidor::Relay;
 
 fn start_relay() -> (String, Relay) {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1066,7 +1067,7 @@ fn el_rele_avisa_sin_contenido_a_quien_tiene_ficha_de_avisos() {
 
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let relay = l.local_addr().unwrap().to_string();
-    let mut r = mobilemesh_core::relay::Relay::default();
+    let mut r = mobilemesh_servidor::Relay::default();
     r.notifier = Some(script.display().to_string());
     thread::spawn(move || r.serve(l));
 
@@ -1267,7 +1268,7 @@ fn el_directorio_firmado_llega_por_el_rele_y_no_se_puede_falsificar() {
         std::fs::write(&f, contenido).unwrap();
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = l.local_addr().unwrap().to_string();
-        let mut r = mobilemesh_core::relay::Relay::default();
+        let mut r = mobilemesh_servidor::Relay::default();
         r.directorio = Some(f.display().to_string());
         thread::spawn(move || r.serve(l));
         addr
@@ -1275,7 +1276,7 @@ fn el_directorio_firmado_llega_por_el_rele_y_no_se_puede_falsificar() {
     let falso = firmar(&Directorio { v: 99, reles: vec!["6.6.6.6:7900".into()], ..Default::default() }, &[9u8; 32]).unwrap();
     let malo = serve(&falso, "falso.txt");
     let bueno = serve(&linea, "bueno.txt");
-    let sin = { let l = TcpListener::bind("127.0.0.1:0").unwrap(); let a = l.local_addr().unwrap().to_string(); thread::spawn(move || mobilemesh_core::relay::Relay::default().serve(l)); a };
+    let sin = { let l = TcpListener::bind("127.0.0.1:0").unwrap(); let a = l.local_addr().unwrap().to_string(); thread::spawn(move || mobilemesh_servidor::Relay::default().serve(l)); a };
 
     // Se ignora el falso (aunque tenga versión mayor) y el relé sin directorio.
     let (got, _) = descargar_con(&[malo, sin.clone(), bueno], &clave).unwrap();
@@ -1338,7 +1339,7 @@ fn un_navegador_habla_con_el_rele_por_websocket() {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let ws = l.local_addr().unwrap();
     let relay_addr: std::net::SocketAddr = relay.parse().unwrap();
-    thread::spawn(move || mobilemesh_core::websocket::serve(l, relay_addr, None));
+    thread::spawn(move || mobilemesh_servidor::websocket::serve(l, relay_addr, None));
 
     // Cliente WebSocket mínimo, como un navegador.
     let mut s = TcpStream::connect(ws).unwrap();

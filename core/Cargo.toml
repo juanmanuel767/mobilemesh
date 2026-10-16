@@ -19,8 +19,6 @@ vodozemac = "0.11.1"
 # Android/iPhone: puente con Kotlin/Swift. No entra en la versión para navegador.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 uniffi = "0.32.2"
-# Candado (wss://) del puente web del relé.
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 # Navegador (WebAssembly): los números al azar los da el navegador.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -34,6 +32,10 @@ sqlite-wasm-rs = "0.5"
 wasm-bindgen-futures = "0.4"
 # Navegador: std no tiene reloj allí; este usa el del navegador con la misma forma.
 web-time = "1"
+
+# Las pruebas del núcleo levantan relés de verdad (proyecto aparte, licencia AGPL).
+[dev-dependencies]
+mobilemesh-servidor = { path = "../servidor" }
 
 [[bin]]
 name = "mesh"

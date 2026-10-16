@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Juan Manuel Peralta Chacon (GitHub: juanmanuel767)
 //! Candado (wss://) para el puente web del relé (pieza aparte). Las páginas https solo pueden
 //! conectar con `wss://`: aquí se quita el TLS y los bytes pasan, ya en claro, al puente WebSocket
 //! de siempre por una conexión local. El contenido sigue cifrado de extremo a extremo por dentro.
 //!
 //! El certificado se lee en cada conexión: al renovarlo (cada 60–90 días) no hace falta reiniciar.
 
-use crate::Result;
+use mobilemesh_core::Result;
 use rustls::{
     ServerConfig, ServerConnection, StreamOwned,
     pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
