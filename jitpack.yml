@@ -1,0 +1,11 @@
+# JitPack sirve la librería de Android ya compilada (el núcleo en Rust no se puede compilar allí):
+# descarga el .aar publicado en la versión de GitHub y lo instala con su descripción (pom.xml).
+#   repositories { maven("https://jitpack.io") }
+#   dependencies { implementation("com.github.juanmanuel767:mobilemesh:<versión>") }
+jdk:
+  - openjdk17
+install:
+  - V=$(git describe --tags --exact-match)
+  - wget -q "https://github.com/juanmanuel767/mobilemesh/releases/download/$V/mobilemesh-sdk.aar"
+  - sed "s/VERSION/$V/" android/publicar/pom.xml > pom-final.xml
+  - mvn -q install:install-file -Dfile=mobilemesh-sdk.aar -DpomFile=pom-final.xml

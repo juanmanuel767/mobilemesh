@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Descripción de la librería para Maven/JitPack: la versión la pone jitpack.yml. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.github.juanmanuel767</groupId>
+  <artifactId>mobilemesh</artifactId>
+  <version>VERSION</version>
+  <packaging>aar</packaging>
+  <name>MobileMesh SDK para Android</name>
+  <description>Backend local-first, cifrado y sin nube: alternativa a Firebase y Supabase.</description>
+  <url>https://github.com/juanmanuel767/mobilemesh</url>
+  <licenses>
+    <license><name>MIT</name><url>https://github.com/juanmanuel767/mobilemesh/blob/master/LICENSE</url></license>
+  </licenses>
+  <developers>
+    <developer><id>juanmanuel767</id><name>Juan Manuel Peralta Chacon</name></developer>
+  </developers>
+  <dependencies>
+    <!-- El núcleo en Rust se llama desde Kotlin con JNA. -->
+    <dependency>
+      <groupId>net.java.dev.jna</groupId>
+      <artifactId>jna</artifactId>
+      <version>5.17.0</version>
+      <type>aar</type>
+    </dependency>
+  </dependencies>
+</project>
