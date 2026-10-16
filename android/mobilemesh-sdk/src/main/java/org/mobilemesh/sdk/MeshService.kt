@@ -232,10 +232,43 @@ class DespertadorReceiver : BroadcastReceiver() {
                 val m = MeshHolder.open(app)
                 val n = m?.checkMailbox()?.toInt() ?: 0
                 if (n > 0) Avisos.mensajeNuevo(app, n)
+                CopiaAutomatica.siToca(app)
             } catch (e: Exception) {
                 // Sin red o relé caído: se reintenta en el siguiente despertar.
             } finally {
                 pendiente.finish()
+            }
+        }.start()
+    }
+}
+
+/**
+ * Copia automática: vuelve a subir la copia cifrada (contactos, mensajes y datos) a quien la guarda
+ * —el guardián, si se usó `protegerConGuardian`— como mucho cada `CADA_HORAS`, al abrir la app y en
+ * los despertares. Así, al formatear o perder el teléfono, se recupera lo hablado hasta hace poco y
+ * no solo hasta el día del registro. Sin nadie que guarde la copia, no hace nada.
+ */
+object CopiaAutomatica {
+    // ponytail: intervalo fijo; hacerlo configurable si una app lo pide.
+    const val CADA_HORAS = 6
+    private val enMarcha = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun siToca(c: Context) {
+        val prefs = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)
+        val ahora = System.currentTimeMillis()
+        if (ahora - prefs.getLong("ultima_copia", 0) < CADA_HORAS * 3_600_000L) return
+        val m = MeshHolder.mesh ?: return
+        if (!enMarcha.compareAndSet(false, true)) return
+        Thread {
+            try {
+                // Falla si nadie guarda la copia («elige primero…») o sin red: se reintenta más tarde.
+                m.backupNow()
+                prefs.edit().putLong("ultima_copia", ahora).apply()
+                android.util.Log.i("MobileMesh", "copia automática hecha")
+            } catch (e: Exception) {
+                android.util.Log.i("MobileMesh", "copia automática pendiente: ${e.message}")
+            } finally {
+                enMarcha.set(false)
             }
         }.start()
     }

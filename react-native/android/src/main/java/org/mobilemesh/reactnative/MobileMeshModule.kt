@@ -116,6 +116,17 @@ class MobileMeshModule(private val ctx: ReactApplicationContext) : ReactContextB
         Arguments.fromList(nuevos)
     }
 
+    /** ¿La cuenta tiene copia en el guardián (se puede recuperar al formatear)? */
+    @ReactMethod fun protegida(p: Promise) = trabajar(p) { "guardián" in m().contactos() }
+
+    /** Protege la cuenta en el guardián si al registrarse no se pudo (sin red, guardián caído…). */
+    @ReactMethod
+    fun proteger(contrasena: String, p: Promise) = trabajar(p) {
+        val usuario = prefs().getString("usuario", null) ?: throw IllegalStateException("Primero crea la cuenta")
+        m().protegerConGuardian(usuario, contrasena)
+        null
+    }
+
     @ReactMethod fun existeUsuario(usuario: String, p: Promise) = trabajar(p) { m().existeUsuario(usuario) }
 
     @ReactMethod fun anadirPorNombre(usuario: String, p: Promise) = trabajar(p) { m().anadirPorNombre(usuario); null }

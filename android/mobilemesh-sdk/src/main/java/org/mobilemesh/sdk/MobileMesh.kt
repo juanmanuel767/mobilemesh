@@ -81,6 +81,7 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
                 envolver { Mesh.create(MeshHolder.dir(app), KeystoreGuard(app)) }.also { MeshHolder.mesh = it }
             }
             MeshService.start(app)
+            CopiaAutomatica.siToca(app)
             return MobileMesh(app, m)
         }
 
@@ -230,7 +231,7 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
     fun protegerConGuardian(usuario: String, contrasena: String): String = envolver {
         nucleo.saveAccountInGuardian(usuario, contrasena)
         nucleo.useGuardian()
-        nucleo.backupNow()
+        nucleo.backupNow().also { context.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE).edit().putLong("ultima_copia", System.currentTimeMillis()).apply() }
     }
 
     /** Usa tu propio relé «host:puerto» para llegar a otras redes (se aplica al reiniciar la app). */

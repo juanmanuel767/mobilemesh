@@ -18,6 +18,10 @@ export const MobileMesh = {
   entrar: (usuario, contrasena) => N.entrar(usuario, contrasena),
   miUsuario: () => N.miUsuario(),
   existeUsuario: (usuario) => N.existeUsuario(usuario),
+  /** ¿Se puede recuperar la cuenta al formatear? (tiene copia en el guardián, que se actualiza sola) */
+  protegida: () => N.protegida(),
+  /** Protege la cuenta si al registrarse no se pudo. */
+  proteger: (contrasena) => N.proteger(contrasena),
   /** Añade a alguien por su nombre de usuario; su app te añadirá sola. */
   anadirPorNombre: (usuario) => N.anadirPorNombre(usuario),
   /** Acepta a quienes quieren hablar contigo. Devuelve sus nombres. */
