@@ -228,6 +228,10 @@ pub fn on_put(s: &mut Session, store: &Store, me: &Identity, owner: &str, versio
         s.send(&Frame::Bad { id: CHUNK_ID.into(), reason: "no he aceptado guardar copias tuyas".into() })?;
         return Ok(None);
     }
+    if public && store.public_held_bytes(owner)? + size > crate::guardian::MAX_TOTAL {
+        s.send(&Frame::Bad { id: CHUNK_ID.into(), reason: "el guardián está lleno".into() })?;
+        return Ok(None);
+    }
     if size > if public { crate::guardian::MAX_COPIA } else { files::MAX_SIZE } {
         s.send(&Frame::Bad { id: CHUNK_ID.into(), reason: "copia demasiado grande".into() })?;
         return Ok(None);

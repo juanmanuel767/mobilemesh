@@ -61,7 +61,7 @@ fn s(description: &str) -> Value {
 }
 
 fn tools() -> Value {
-    let carpeta = s("Carpeta del nodo de prueba (se crea si no existe con `crear_nodo`)");
+    let carpeta = s("Nombre del nodo de prueba (carpeta dentro de ~/.mobilemesh-mcp), p. ej. «ana»");
     json!([
         tool("guia", "Guía completa del SDK de Android de MobileMesh (Kotlin): cuenta, colecciones, permisos, archivos, mensajes, ayudantes, relés y recuperación.", json!({}), &[]),
         tool("crear_nodo", "Crea un nodo de prueba (identidad y base de datos cifrada) en una carpeta.", json!({"carpeta": carpeta}), &["carpeta"]),
@@ -82,9 +82,25 @@ fn arg<'a>(a: &'a Value, k: &str) -> mobilemesh_core::Result<&'a str> {
     a.get(k).and_then(Value::as_str).ok_or_else(|| format!("falta «{k}»").into())
 }
 
+/// Los nodos solo pueden vivir dentro de la carpeta del servidor (`MESH_MCP_DIR`, por defecto
+/// `~/.mobilemesh-mcp`): la IA no puede crear archivos en cualquier sitio del equipo.
+fn carpeta(nombre: &str) -> mobilemesh_core::Result<std::path::PathBuf> {
+    use std::path::Component;
+    let p = Path::new(nombre);
+    if nombre.is_empty() || !p.components().all(|c| matches!(c, Component::Normal(_))) {
+        return Err("la carpeta debe ser un nombre simple, sin «/» al principio ni «..»".into());
+    }
+    let base = std::env::var_os("MESH_MCP_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".mobilemesh-mcp")))
+        .ok_or("no sé dónde guardar los nodos: define MESH_MCP_DIR")?;
+    Ok(base.join(p))
+}
+
 fn open(dir: &str) -> mobilemesh_core::Result<(Identity, Store)> {
-    let me = Identity::load(Path::new(dir), &Plain).map_err(|_| "esa carpeta no tiene nodo: usa `crear_nodo`")?;
-    let store = Store::open(Path::new(dir), me.db_key())?;
+    let dir = carpeta(dir)?;
+    let me = Identity::load(&dir, &Plain).map_err(|_| "esa carpeta no tiene nodo: usa `crear_nodo`")?;
+    let store = Store::open(&dir, me.db_key())?;
     Ok((me, store))
 }
 
@@ -92,10 +108,10 @@ fn call(name: &str, a: &Value) -> mobilemesh_core::Result<String> {
     Ok(match name {
         "guia" => GUIA.to_string(),
         "crear_nodo" => {
-            let dir = arg(a, "carpeta")?;
-            let me = Identity::create(Path::new(dir), &Plain)?;
-            Store::open(Path::new(dir), me.db_key())?;
-            format!("nodo creado en {dir}; cuenta {}", me.id())
+            let dir = carpeta(arg(a, "carpeta")?)?;
+            let me = Identity::create(&dir, &Plain)?;
+            Store::open(&dir, me.db_key())?;
+            format!("nodo creado en {}; cuenta {}", dir.display(), me.id())
         }
         "guardar_dato" => {
             let (me, store) = open(arg(a, "carpeta")?)?;

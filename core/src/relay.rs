@@ -187,7 +187,8 @@ impl Relay {
                 let mut st = self.lock();
                 let total: usize = st.conns.values().sum();
                 let mine = st.conns.get(&ip).copied().unwrap_or(0);
-                if total >= self.max.unwrap_or(MAX_CONNECTIONS) || mine >= MAX_PER_IP {
+                // Las locales son del puente web, que ya limita por la IP real de cada navegador.
+                if total >= self.max.unwrap_or(MAX_CONNECTIONS) || (mine >= MAX_PER_IP && !ip.is_loopback()) {
                     continue; // se cierra sin contestar
                 }
                 st.conns.insert(ip, mine + 1);
@@ -339,7 +340,7 @@ impl Relay {
         let id = self.prove(&mut s, public)?;
         {
             let mut st = self.lock();
-            if st.boxes.values().filter(|(_, owner_ip)| *owner_ip == ip).count() >= MAX_BOXES_PER_IP {
+            if !ip.is_loopback() && st.boxes.values().filter(|(_, owner_ip)| *owner_ip == ip).count() >= MAX_BOXES_PER_IP {
                 return Err("demasiados buzones desde esa dirección".into());
             }
             writeln!(s, "OK {id}")?;

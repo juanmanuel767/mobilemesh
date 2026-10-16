@@ -905,6 +905,16 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Bytes de copias guardadas para desconocidos (sin consentimiento), sin contar la de `except`.
+    pub fn public_held_bytes(&self, except: &str) -> Result<u64> {
+        let n: i64 = self.db.query_row(
+            "SELECT COALESCE(SUM(size), 0) FROM replicas_held WHERE owner != ?1 AND owner NOT IN (SELECT owner FROM replica_consent)",
+            [except],
+            |r| r.get(0),
+        )?;
+        Ok(n as u64)
+    }
+
     /// El dueño dio señales (comprobó o pidió su copia): no está abandonada.
     pub fn touch_held(&self, owner: &str) -> Result<()> {
         self.db.execute("UPDATE replicas_held SET updated_at = unixepoch() WHERE owner = ?1", [owner])?;

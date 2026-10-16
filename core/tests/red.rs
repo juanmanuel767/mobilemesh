@@ -1369,3 +1369,23 @@ fn un_navegador_habla_con_el_rele_por_websocket() {
     }
     assert_eq!(String::from_utf8(data).unwrap(), "127.0.0.1\n");
 }
+
+#[test]
+fn un_desconocido_no_puede_llenar_el_guardian_con_mensajes() {
+    use mobilemesh_core::guardian;
+    let g = device("guardian-intruso");
+    guardian::enable(&st(&g.0)).unwrap();
+    let intruso = device("intruso-guardian");
+    st(&intruso.0).add_contact("guardian", &g.1.id(), None).unwrap();
+    let store = st(&intruso.0);
+    store.queue(&g.1.id(), "basura para llenar el disco").unwrap();
+    let (addr, h) = listen_once(g.0.clone());
+    assert!(deliver(&store, &intruso.1, &g.1.id(), &addr).is_err(), "el guardián no acepta mensajes");
+    let r = h.join().unwrap();
+    assert!(r.unwrap_err().contains("solo guarda copias"));
+    assert!(st(&g.0).list().unwrap().is_empty(), "no guardó nada");
+    // Pero sí guarda su copia (lo que un guardián tiene que hacer) y la cuenta como espacio público.
+    replica::snapshot(&st(&intruso.0), &intruso.1).unwrap();
+    with_holder(&intruso, &g, &intruso.1, &intruso.0, |s, h| replica::push(s, &intruso.1, h)).unwrap();
+    assert!(st(&g.0).public_held_bytes("nadie").unwrap() > 0);
+}

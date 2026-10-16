@@ -227,7 +227,13 @@ pub fn serve(store: &Store, me: &Identity, stream: impl net::Conn + 'static) -> 
     // para que el remitente llegue a leer el rechazo.
     let mut rejected: Option<String> = None;
     let mut replica_in: Option<replica::Incoming> = None;
+    // Un guardián acepta a cualquiera, pero solo para copias y códigos de cuenta: mensajes y
+    // archivos de desconocidos llenarían su disco (auditoría de las piezas nuevas).
+    let solo_guardian = guardian::is_guardian(store)?;
     while let Some(frame) = s.recv()? {
+        if solo_guardian && !guardian::allowed(&frame) {
+            return Err("un guardián solo guarda copias y códigos de cuenta".into());
+        }
         match frame {
             Frame::KeysReq => {
                 if !access::allow(&format!("llaves:{peer}"), 20, std::time::Duration::from_secs(60)) {

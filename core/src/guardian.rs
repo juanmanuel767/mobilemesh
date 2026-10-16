@@ -34,6 +34,17 @@ pub const CADUCA_DIAS: i64 = 90;
 /// contra él, así que se pide más que para un código guardado en papel.
 pub const MIN_PASS: usize = 12;
 
+/// Espacio total para copias de desconocidos (sin consentimiento) en este guardián.
+pub const MAX_TOTAL: u64 = 2 * 1024 * 1024 * 1024;
+
+/// Lo único que un guardián atiende: copias y códigos de cuenta.
+pub fn allowed(f: &Frame) -> bool {
+    matches!(
+        f,
+        Frame::ReplicaPut { .. } | Frame::ReplicaCheck { .. } | Frame::ReplicaGet | Frame::ReplicaDel | Frame::CuentaPut { .. } | Frame::CuentaGet { .. }
+    ) || matches!(f, Frame::Chunk { id, .. } if id == crate::replica::CHUNK_ID)
+}
+
 /// ¿Este dispositivo es un guardián público?
 pub fn is_guardian(store: &Store) -> Result<bool> {
     Ok(store.setting("guardian")?.as_deref() == Some("1"))
@@ -72,7 +83,8 @@ pub fn on_put(s: &mut Session, store: &Store, peer: &str, id: &str, code: &str) 
         && valid_locator(id)
         && code.len() <= 200
         && code.to_lowercase().starts_with("mm3")
-        && crate::access::allow(&format!("cuenta-put:{peer}"), 5, Duration::from_secs(60));
+        && crate::access::allow(&format!("cuenta-put:{peer}"), 5, Duration::from_secs(60))
+        && crate::access::allow("cuenta-put", 60, Duration::from_secs(60));
     let key = format!("cuenta:{id}");
     let owner_ok = match store.setting(&key)? {
         Some(v) => v.split_once('\n').is_some_and(|(owner, _)| owner == peer),

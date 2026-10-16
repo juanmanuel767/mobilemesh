@@ -30,7 +30,8 @@ pub fn serve(listener: TcpListener, relay: SocketAddr, tls: Option<(String, Stri
         {
             let mut m = por_ip.lock().unwrap_or_else(|e| e.into_inner());
             let n = m.entry(ip).or_insert(0);
-            if *n >= MAX_POR_IP {
+            // Las locales vienen del candado (wss), que ya contó la IP real.
+            if *n >= MAX_POR_IP && !ip.is_loopback() {
                 continue;
             }
             *n += 1;
@@ -92,10 +93,12 @@ fn bridge(mut web: TcpStream, relay: SocketAddr) -> Result<()> {
 
 /// Saludo HTTP de WebSocket (RFC 6455): responde 101 con la clave de aceptación.
 fn handshake(s: &mut TcpStream) -> Result<()> {
+    // Plazo TOTAL (no por byte): si no, se puede retener la conexión mandando un byte cada poco.
+    let limite = std::time::Instant::now() + WAIT;
     let mut req = Vec::new();
     let mut b = [0u8; 1];
     while !req.ends_with(b"\r\n\r\n") {
-        if req.len() > 8192 || s.read(&mut b)? == 0 {
+        if std::time::Instant::now() > limite || req.len() > 8192 || s.read(&mut b)? == 0 {
             return Err("saludo WebSocket no válido".into());
         }
         req.push(b[0]);
