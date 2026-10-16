@@ -173,9 +173,11 @@ impl Store {
         // En el navegador el almacén (OPFS) no lo admite: se queda el modo normal.
         // Cambiar el modo exige la base en exclusiva: solo la primera vez (queda guardado en el
         // archivo); si no, dos aperturas a la vez fallaban con «base ocupada» (lo vio una prueba).
+        // Y si aun así está ocupada (otra apertura a la vez justo al crearla), no pasa nada: WAL es
+        // solo velocidad, se activará en la próxima apertura (una prueba de ataques lo destapó).
         #[cfg(not(target_arch = "wasm32"))]
         if db.query_row("PRAGMA journal_mode", [], |r| r.get::<_, String>(0))? != "wal" {
-            db.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
+            let _ = db.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()));
         }
         db.execute_batch(SCHEMA)?;
         // Todas las migraciones pendientes juntas y con la base reservada: dos aperturas a la vez
