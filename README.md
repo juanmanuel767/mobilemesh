@@ -114,8 +114,6 @@ Para probar sin nada más: `python3 mobilemesh/servir.py 8080` y abre `http://12
 - La **guía de nombres** solo sabe `nombre → dirección` (datos públicos); nadie puede quitarle el nombre a su dueño.
 - Los **ayudantes** son funciones de servidor opcionales que saben con certeza qué cuenta los llama: [pagos con cualquier pasarela](examples/ayudante-pagos).
 
-Relés, guardián y guía públicos los ofrece hoy un móvil (app «Relé MobileMesh», [`android/rele-movil`](android/rele-movil)). Puedes montar los tuyos o [donar un relé](docs/donar-un-rele.md) con un móvil viejo.
-
 ## ✅ Estado
 
 **Probado en móviles reales** (TECNO KJ5, Redmi A5 y nubia Z2465N), en la misma wifi y en redes distintas:
