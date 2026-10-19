@@ -12,13 +12,13 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use std::{
     collections::HashMap,
     io::{Read, Write},
-    net::{IpAddr, Shutdown, TcpListener, TcpStream},
+    net::{IpAddr, Ipv6Addr, Shutdown, TcpListener, TcpStream},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 /// La conexión de control manda «PING» cada 25 s; si calla más que esto, se cierra.
 const SILENCE: Duration = Duration::from_secs(90);
@@ -27,12 +27,20 @@ const IDLE: Duration = Duration::from_secs(300);
 // ponytail: límites fijos; hacerlos configurables cuando haya relés públicos con mucha gente.
 const MAX_CONNECTIONS: usize = 1024;
 // Altos a propósito: con datos móviles cientos de teléfonos salen por la misma IP de la operadora.
+// Pero nunca más de un cuarto del total: una sola IP no puede dejar fuera a todos los demás.
 const MAX_PER_IP: usize = 1000;
 const MAX_BOXES_PER_IP: usize = 1000;
 const MAX_PENDING: usize = 256;
 const MAX_PENDING_PER_BOX: usize = 4;
 const MAX_LETTERS_PER_BOX: usize = 200;
 const MAX_LETTER_BYTES: usize = 64 * 1024 * 1024;
+/// Lo que ocupa en memoria cada carta aparte de su texto (ficha, hora, buzón): así un aluvión de
+/// cartas de 1 byte también choca con `MAX_LETTER_BYTES`.
+const LETTER_OVERHEAD: usize = 256;
+/// Las cartas caducadas se buscan como mucho una vez por este tiempo (recorrerlas todas cuesta).
+const PURGE_EVERY: Duration = Duration::from_secs(60);
+/// Tiempo total para mandar una orden (por lentos que lleguen los bytes, sin goteo eterno).
+const LINE_DEADLINE: Duration = Duration::from_secs(30);
 const LETTER_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
 /// Como mucho un aviso por buzón cada este tiempo (varias cartas seguidas = un aviso).
 const NOTIFY_EVERY: Duration = Duration::from_secs(20);
@@ -48,24 +56,80 @@ struct State {
     /// buzón → cartas (ficha, carta, cuándo llegó)
     letters: HashMap<String, Vec<(String, String, std::time::Instant)>>,
     letter_bytes: usize,
+    last_purge: Option<Instant>,
     /// buzón → (ficha de avisos, último aviso)
     push: HashMap<String, (String, Option<std::time::Instant>)>,
 }
 
 impl State {
     fn purge_old_letters(&mut self) {
+        if self.last_purge.is_some_and(|t| t.elapsed() < PURGE_EVERY) {
+            return;
+        }
+        self.last_purge = Some(Instant::now());
         let mut freed = 0;
         for list in self.letters.values_mut() {
             list.retain(|(_, l, at)| {
                 let keep = at.elapsed() < LETTER_TTL;
                 if !keep {
-                    freed += l.len();
+                    freed += l.len() + LETTER_OVERHEAD;
                 }
                 keep
             });
         }
         self.letters.retain(|_, l| !l.is_empty());
         self.letter_bytes -= freed;
+    }
+
+    /// Guarda una carta si caben (por buzón y en total). Devuelve si la guardó.
+    fn keep_letter(&mut self, id: &str, letter: &str) -> Result<bool> {
+        self.purge_old_letters();
+        let full = self.letters.get(id).is_some_and(|l| l.len() >= MAX_LETTERS_PER_BOX);
+        let cost = letter.len() + LETTER_OVERHEAD;
+        if full || self.letter_bytes + cost > MAX_LETTER_BYTES {
+            return Ok(false);
+        }
+        let mut token = [0u8; 16];
+        getrandom::fill(&mut token).map_err(|e| e.to_string())?;
+        self.letter_bytes += cost;
+        self.letters.entry(id.to_string()).or_default().push((to_hex(&token), letter.to_string(), Instant::now()));
+        Ok(true)
+    }
+}
+
+/// La IP con la que se cuentan los límites: en IPv6 cada casa recibe un /64 entero, así que se
+/// cuenta por /64 (si no, cambiar de dirección dentro de él saltaría el límite).
+pub(crate) fn ip_key(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => v4.into(),
+            None => {
+                let s = v6.segments();
+                Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0).into()
+            }
+        },
+        v4 => v4,
+    }
+}
+
+/// Lector con plazo total: cada lectura espera solo lo que queda hasta `1`, así mandar un byte
+/// cada pocos segundos no mantiene ocupada la conexión para siempre.
+struct Deadline<'a>(&'a TcpStream, Instant);
+
+impl Deadline<'_> {
+    fn of(s: &TcpStream) -> Deadline<'_> {
+        Deadline(s, Instant::now() + LINE_DEADLINE)
+    }
+}
+
+impl Read for Deadline<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let left = self.1.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
+        self.0.set_read_timeout(Some(left))?;
+        (&mut &*self.0).read(buf)
     }
 }
 
@@ -97,24 +161,26 @@ impl Relay {
         for stream in listener.incoming().flatten() {
             let _ = stream.set_nodelay(true); // sin esperas de Nagle en las órdenes cortas
             let Ok(ip) = stream.peer_addr().map(|a| a.ip()) else { continue };
+            let key = ip_key(ip);
             {
                 let mut st = self.lock();
                 let total: usize = st.conns.values().sum();
-                let mine = st.conns.get(&ip).copied().unwrap_or(0);
+                let mine = st.conns.get(&key).copied().unwrap_or(0);
+                let max = self.max.unwrap_or(MAX_CONNECTIONS);
                 // Las locales son del puente web, que ya limita por la IP real de cada navegador.
-                if total >= self.max.unwrap_or(MAX_CONNECTIONS) || (mine >= MAX_PER_IP && !ip.is_loopback()) {
+                if total >= max || (mine >= MAX_PER_IP.min(max / 4).max(1) && !ip.is_loopback()) {
                     continue; // se cierra sin contestar
                 }
-                st.conns.insert(ip, mine + 1);
+                st.conns.insert(key, mine + 1);
             }
             let me = self.clone();
             thread::spawn(move || {
                 let _ = me.handle(stream, ip);
                 let mut st = me.lock();
-                if let Some(n) = st.conns.get_mut(&ip) {
+                if let Some(n) = st.conns.get_mut(&key) {
                     *n -= 1;
                     if *n == 0 {
-                        st.conns.remove(&ip);
+                        st.conns.remove(&key);
                     }
                 }
             });
@@ -124,7 +190,8 @@ impl Relay {
     fn handle(&self, mut s: TcpStream, ip: IpAddr) -> Result<()> {
         s.set_read_timeout(Some(WAIT))?;
         s.set_write_timeout(Some(WAIT))?;
-        let line = read_line_max(&mut s, MAX_LETTER + 200)?;
+        let line = read_line_max(&mut Deadline::of(&s), MAX_LETTER + 200)?;
+        s.set_read_timeout(Some(WAIT))?;
         let (cmd, arg) = line.split_once(' ').unwrap_or((&line, ""));
         match cmd {
             "REGISTRAR" => self.register(s, ip, arg),
@@ -163,7 +230,7 @@ impl Relay {
         let mut nonce = [0u8; 32];
         getrandom::fill(&mut nonce).map_err(|e| e.to_string())?;
         writeln!(s, "RETO {}", to_hex(&nonce))?;
-        let answer = read_line(s)?;
+        let answer = read_line(&mut Deadline::of(s))?;
         let sig: [u8; 64] = from_hex_any(answer.strip_prefix("FIRMA ").ok_or("se esperaba la firma")?)?
             .try_into()
             .map_err(|_| "firma no válida")?;
@@ -180,15 +247,9 @@ impl Relay {
             && letter.bytes().all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b))
             && {
                 let mut st = self.lock();
-                st.purge_old_letters();
-                let full = st.letters.get(id).is_some_and(|l| l.len() >= MAX_LETTERS_PER_BOX);
-                if full || st.letter_bytes + letter.len() > MAX_LETTER_BYTES {
+                if !st.keep_letter(id, letter)? {
                     false
                 } else {
-                    let mut token = [0u8; 16];
-                    getrandom::fill(&mut token).map_err(|e| e.to_string())?;
-                    st.letter_bytes += letter.len();
-                    st.letters.entry(id.to_string()).or_default().push((to_hex(&token), letter.to_string(), std::time::Instant::now()));
                     if let (Some(cmd), Some((push, last))) = (&self.notifier, st.push.get_mut(id))
                         && last.is_none_or(|t| t.elapsed() > NOTIFY_EVERY)
                     {
@@ -208,7 +269,7 @@ impl Relay {
     /// El dueño de un buzón guarda (o quita con «-») su ficha de avisos.
     fn set_push(&self, mut s: TcpStream, public: &str) -> Result<()> {
         let id = self.prove(&mut s, public)?;
-        let token = read_line_max(&mut s, 4200)?;
+        let token = read_line_max(&mut Deadline::of(&s), 4200)?;
         let valid = token.len() <= 4096 && token.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_:.".contains(&b));
         if !valid || token.is_empty() {
             return Err("ficha de avisos no válida".into());
@@ -236,14 +297,14 @@ impl Relay {
             writeln!(s, "CARTA {token} {letter}")?;
         }
         writeln!(s, "FIN")?;
-        while let Ok(line) = read_line(&mut s) {
+        while let Ok(line) = read_line(&mut Deadline::of(&s)) {
             let Some(token) = line.strip_prefix("RECIBIDA ") else { break };
             let mut st = self.lock();
             if let Some(list) = st.letters.get_mut(&id)
                 && let Some(i) = list.iter().position(|(t, _, _)| t == token)
             {
                 let (_, letter, _) = list.remove(i);
-                st.letter_bytes -= letter.len();
+                st.letter_bytes -= letter.len() + LETTER_OVERHEAD;
             }
         }
         Ok(())
@@ -252,6 +313,7 @@ impl Relay {
     /// Registro del buzón para recibir llamadas.
     fn register(&self, mut s: TcpStream, ip: IpAddr, public: &str) -> Result<()> {
         let id = self.prove(&mut s, public)?;
+        let ip = ip_key(ip);
         {
             let mut st = self.lock();
             if !ip.is_loopback() && st.boxes.values().filter(|(_, owner_ip)| *owner_ip == ip).count() >= MAX_BOXES_PER_IP {
@@ -368,5 +430,41 @@ mod pruebas {
         }
         assert!(t.elapsed() >= std::time::Duration::from_millis(900), "{:?}", t.elapsed());
         assert!(t.elapsed() < std::time::Duration::from_secs(3));
+    }
+
+    #[test]
+    fn un_aluvion_de_cartas_pequenas_choca_con_el_tope() {
+        let mut st = super::State::default();
+        let mut n = 0;
+        while st.keep_letter(&format!("{n:032}"), "A").unwrap() {
+            n += 1;
+        }
+        // Cada carta cuenta su texto y lo que ocupa aparte: el tope llega mucho antes de agotar la memoria.
+        assert_eq!(n, super::MAX_LETTER_BYTES / (1 + super::LETTER_OVERHEAD));
+    }
+
+    #[test]
+    fn ipv6_se_cuenta_por_casa() {
+        use std::net::IpAddr;
+        let a: IpAddr = "2001:db8:1:2::1".parse().unwrap();
+        let b: IpAddr = "2001:db8:1:2:ffff::9".parse().unwrap();
+        let otra: IpAddr = "2001:db8:1:3::1".parse().unwrap();
+        assert_eq!(super::ip_key(a), super::ip_key(b));
+        assert_ne!(super::ip_key(a), super::ip_key(otra));
+        assert_eq!(super::ip_key("::ffff:1.2.3.4".parse().unwrap()), "1.2.3.4".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn el_goteo_no_mantiene_la_conexion() {
+        use std::{io::Write, net::{TcpListener, TcpStream}, time::{Duration, Instant}};
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut c = TcpStream::connect(l.local_addr().unwrap()).unwrap();
+        let (s, _) = l.accept().unwrap();
+        // Un byte cada 50 ms (cada lectura llega a tiempo), pero el plazo total es de 300 ms.
+        std::thread::spawn(move || while c.write_all(b"x").is_ok() { std::thread::sleep(Duration::from_millis(50)) });
+        let t = Instant::now();
+        let r = mobilemesh_core::relay::read_line_max(&mut super::Deadline(&s, Instant::now() + Duration::from_millis(300)), 1000);
+        assert!(r.is_err());
+        assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
     }
 }

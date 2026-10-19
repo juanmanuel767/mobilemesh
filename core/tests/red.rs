@@ -1313,6 +1313,30 @@ fn el_guardian_borra_las_copias_abandonadas_pero_no_las_de_amigos() {
 }
 
 #[test]
+fn las_copias_a_medias_cuentan_y_caducan() {
+    use mobilemesh_core::guardian;
+    let g = device("guardian-parcial");
+    guardian::enable(&st(&g.0)).unwrap();
+    let store = st(&g.0);
+    // Un desconocido sube 1000 bytes y nunca termina; un amigo deja otra a medias.
+    let extrano = "7".repeat(64);
+    std::fs::write(store.replica_path(Some(&extrano)).unwrap().with_extension("3.parcial"), [0u8; 1000]).unwrap();
+    let amigo = "9".repeat(64);
+    store.set_consent(&amigo, true).unwrap();
+    std::fs::write(store.replica_path(Some(&amigo)).unwrap().with_extension("1.parcial"), [0u8; 500]).unwrap();
+
+    // Ocupa sitio para los demás, pero no para él mismo (su copia a medias se reemplaza).
+    assert_eq!(store.public_held_bytes("otro").unwrap(), 1000);
+    assert_eq!(store.public_held_bytes(&extrano).unwrap(), 0);
+    // Recién escrita no se borra; pasadas las horas sí, y la del amigo se queda.
+    assert_eq!(guardian::purge(&store).unwrap(), 0);
+    let futuro = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 + 10;
+    assert_eq!(guardian::purge_partials_before(&store, futuro).unwrap(), 1);
+    assert_eq!(store.public_held_bytes("otro").unwrap(), 0);
+    assert!(store.replica_path(Some(&amigo)).unwrap().with_extension("1.parcial").exists());
+}
+
+#[test]
 fn entrega_directa_por_ipv6() {
     let (alice, bob) = (device("alice-v6"), device("bob-v6"));
     befriend(&alice, "alice", &bob, "bob");

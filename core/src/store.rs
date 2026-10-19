@@ -919,13 +919,35 @@ impl Store {
     }
 
     /// Bytes de copias guardadas para desconocidos (sin consentimiento), sin contar la de `except`.
+    /// Cuentan también las recepciones a medias: si no, quien nunca termina llenaría el disco.
     pub fn public_held_bytes(&self, except: &str) -> Result<u64> {
         let n: i64 = self.db.query_row(
             "SELECT COALESCE(SUM(size), 0) FROM replicas_held WHERE owner != ?1 AND owner NOT IN (SELECT owner FROM replica_consent)",
             [except],
             |r| r.get(0),
         )?;
-        Ok(n as u64)
+        let mine = self.replica_path(Some(except))?;
+        let mine = mine.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        let partial: u64 = self.public_partials()?.iter().filter(|(p, ..)| !p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(&format!("{mine}.")))).map(|(_, len, _)| len).sum();
+        Ok(n as u64 + partial)
+    }
+
+    /// Recepciones a medias de copias de desconocidos: (archivo, bytes, última escritura en segundos Unix).
+    pub fn public_partials(&self) -> Result<Vec<(PathBuf, u64, i64)>> {
+        let friends: Vec<String> = self.db.prepare("SELECT owner FROM replica_consent")?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        std::fs::create_dir_all(&self.replicas)?;
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(&self.replicas)?.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let friend = friends.iter().any(|o| name.starts_with(&format!("de-{}.", &o[..16.min(o.len())])));
+            if !name.ends_with(".parcial") || friend {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else { continue };
+            let at = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs() as i64);
+            out.push((entry.path(), meta.len(), at));
+        }
+        Ok(out)
     }
 
     /// El dueño dio señales (comprobó o pidió su copia): no está abandonada.

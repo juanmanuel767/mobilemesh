@@ -17,7 +17,8 @@ use std::{
 
 /// Tamaño máximo de un mensaje WebSocket (las cartas del relé son de hasta 48 KB).
 const MAX_FRAME: u64 = 1024 * 1024;
-const MAX_POR_IP: usize = 1000;
+// Un cuarto de las conexiones del relé: una sola IP no puede ocuparlo entero.
+const MAX_POR_IP: usize = 256;
 const WAIT: Duration = Duration::from_secs(10);
 
 /// Atiende WebSocket en `listener` y empalma cada conexión con el relé en `relay`. Con `tls`
@@ -29,7 +30,8 @@ pub fn serve(listener: TcpListener, relay: SocketAddr, tls: Option<(String, Stri
     let por_ip: Arc<Mutex<HashMap<IpAddr, usize>>> = Arc::default();
     for stream in listener.incoming().flatten() {
         let _ = stream.set_nodelay(true);
-        let Ok(ip) = stream.peer_addr().map(|a| a.ip()) else { continue };
+        let Ok(real) = stream.peer_addr().map(|a| a.ip()) else { continue };
+        let ip = crate::rele::ip_key(real);
         {
             let mut m = por_ip.lock().unwrap_or_else(|e| e.into_inner());
             let n = m.entry(ip).or_insert(0);
@@ -43,6 +45,8 @@ pub fn serve(listener: TcpListener, relay: SocketAddr, tls: Option<(String, Stri
         let (tls, yo) = (tls.clone(), yo.as_ref().ok().copied());
         thread::spawn(move || {
             let mut primero = [0u8; 1];
+            // Sin plazo, quien conecta y no manda nada dejaría este hilo esperando para siempre.
+            let _ = stream.set_read_timeout(Some(WAIT));
             let es_tls = stream.peek(&mut primero).is_ok_and(|n| n == 1 && primero[0] == 0x16);
             #[cfg(not(target_arch = "wasm32"))]
             if let (true, Some((cert, key)), Some(yo)) = (es_tls, &tls, yo) {

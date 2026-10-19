@@ -30,6 +30,10 @@ pub const MAX_COPIA: u64 = 50 * 1024 * 1024;
 /// cuenta no caducan: ocupan muy poco y hacen falta justo cuando el teléfono se perdió.
 pub const CADUCA_DIAS: i64 = 90;
 
+/// Horas sin avanzar tras las que se borra una copia a medias de un desconocido (la purga corre
+/// cada 6 h): quien suba trozos y nunca termine no ocupa el disco para siempre.
+pub const PARCIAL_HORAS: i64 = 24;
+
 /// Contraseña mínima para guardar el código en un guardián: cualquiera puede probar contraseñas
 /// contra él, así que se pide más que para un código guardado en papel.
 pub const MIN_PASS: usize = 12;
@@ -125,10 +129,21 @@ pub fn purge_before(store: &Store, before: i64) -> Result<usize> {
     Ok(viejas.len())
 }
 
-/// Borra las copias sin señales en `CADUCA_DIAS`.
+/// Borra las recepciones a medias de desconocidos sin escribir desde `before` (segundos Unix).
+/// Devuelve cuántas borró.
+pub fn purge_partials_before(store: &Store, before: i64) -> Result<usize> {
+    let viejas: Vec<_> = store.public_partials()?.into_iter().filter(|(_, _, at)| *at < before).collect();
+    for (path, ..) in &viejas {
+        std::fs::remove_file(path)?;
+    }
+    Ok(viejas.len())
+}
+
+/// Borra las copias sin señales en `CADUCA_DIAS` y las recepciones a medias paradas desde hace
+/// `PARCIAL_HORAS`.
 pub fn purge(store: &Store) -> Result<usize> {
     let ahora = crate::tiempo::SystemTime::now().duration_since(crate::tiempo::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
-    purge_before(store, ahora - CADUCA_DIAS * 86_400)
+    Ok(purge_before(store, ahora - CADUCA_DIAS * 86_400)? + purge_partials_before(store, ahora - PARCIAL_HORAS * 3600)?)
 }
 
 // ---------- Lado del usuario ----------
