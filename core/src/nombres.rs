@@ -51,8 +51,9 @@ fn bad(s: &mut Session, reason: &str) -> Result<()> {
     s.send(&Frame::Bad { id: "nombre".into(), reason: reason.into() })
 }
 
+/// Por cuenta, nunca un tope común: uno compartido lo agota un solo abusón y bloquea a todos.
 fn limite(peer: &str, que: &str) -> bool {
-    crate::access::allow(&format!("{que}:{peer}"), 60, Duration::from_secs(60)) && crate::access::allow(que, 600, Duration::from_secs(60))
+    crate::access::allow(&format!("{que}:{peer}"), 60, Duration::from_secs(60))
 }
 
 // ---------- Lado de la guía ----------

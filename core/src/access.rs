@@ -141,7 +141,9 @@ pub fn allow(key: &str, max: usize, window: Duration) -> bool {
 
 /// Mensajes por minuto que se aceptan de un mismo contacto.
 pub const MESSAGES_PER_MINUTE: usize = 60;
-/// Conexiones por minuto que se aceptan desde una misma dirección IP (antes del saludo).
-pub const CONNECTIONS_PER_MINUTE: usize = 30;
+/// Conexiones por minuto que se aceptan desde una misma dirección IP (antes del saludo). Alto a
+/// propósito: una casa o una operadora (CGNAT) saca a muchos usuarios por la misma IP; el abuso
+/// se frena por cuenta, no por IP.
+pub const CONNECTIONS_PER_MINUTE: usize = 600;
 /// Prefijo de los rechazos por límite: el remitente no lo da por error, lo deja pendiente.
 pub const LIMIT: &str = "LÍMITE";
