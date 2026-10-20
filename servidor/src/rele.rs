@@ -41,6 +41,14 @@ const LETTER_OVERHEAD: usize = 256;
 const PURGE_EVERY: Duration = Duration::from_secs(60);
 /// Tiempo total para mandar una orden (por lentos que lleguen los bytes, sin goteo eterno).
 const LINE_DEADLINE: Duration = Duration::from_secs(30);
+/// Pila de cada hilo: la de serie (2 MB) sobra para leer y copiar bytes.
+const STACK: usize = 256 * 1024;
+
+/// Un hilo con la pila pequeña. Si el sistema no da más hilos, devuelve el error: se rechaza esa
+/// conexión en vez de caerse el relé entero (`thread::spawn` aborta en ese caso).
+fn hilo<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> std::io::Result<thread::JoinHandle<T>> {
+    thread::Builder::new().stack_size(STACK).spawn(f)
+}
 const LETTER_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
 /// Como mucho un aviso por buzón cada este tiempo (varias cartas seguidas = un aviso).
 const NOTIFY_EVERY: Duration = Duration::from_secs(20);
@@ -174,16 +182,24 @@ impl Relay {
                 st.conns.insert(key, mine + 1);
             }
             let me = self.clone();
-            thread::spawn(move || {
+            if hilo(move || {
                 let _ = me.handle(stream, ip);
-                let mut st = me.lock();
-                if let Some(n) = st.conns.get_mut(&key) {
-                    *n -= 1;
-                    if *n == 0 {
-                        st.conns.remove(&key);
-                    }
-                }
-            });
+                me.release(key);
+            })
+            .is_err()
+            {
+                self.release(key); // sin hilo: la conexión se cierra y deja de contar
+            }
+        }
+    }
+
+    fn release(&self, key: IpAddr) {
+        let mut st = self.lock();
+        if let Some(n) = st.conns.get_mut(&key) {
+            *n -= 1;
+            if *n == 0 {
+                st.conns.remove(&key);
+            }
         }
     }
 
@@ -374,7 +390,7 @@ impl Relay {
         let (limite, ventana) = (self.limite, self.ventana.clone());
         let pipe = |mut from: TcpStream, mut to: TcpStream, count: Arc<AtomicU64>| {
             let ventana = ventana.clone();
-            thread::spawn(move || {
+            move || {
                 let mut buf = [0u8; 16 * 1024];
                 while let Ok(n @ 1..) = from.read(&mut buf) {
                     if let Some(l) = limite {
@@ -387,12 +403,14 @@ impl Relay {
                 }
                 let _ = to.shutdown(Shutdown::Both);
                 let _ = from.shutdown(Shutdown::Both);
-            })
+            }
         };
-        if let (Ok(a2), Ok(b2)) = (a.try_clone(), b.try_clone()) {
-            let x = pipe(a, b2, self.forwarded.clone());
-            let y = pipe(b, a2, self.forwarded.clone());
-            let _ = (x.join(), y.join());
+        // Un sentido en un hilo nuevo y el otro en este: un hilo menos por llamada.
+        if let (Ok(a2), Ok(b2)) = (a.try_clone(), b.try_clone())
+            && let Ok(x) = hilo(pipe(a, b2, self.forwarded.clone()))
+        {
+            pipe(b, a2, self.forwarded.clone())();
+            let _ = x.join();
         }
     }
 }
