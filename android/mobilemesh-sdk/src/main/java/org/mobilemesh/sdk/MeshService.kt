@@ -311,7 +311,7 @@ class BootReceiver : BroadcastReceiver() {
 }
 
 /**
- * Supernodo: si el usuario lo permite, el teléfono hace de relé ligero para otros usuarios mientras
+ * Supernodo (encendido por defecto; la app puede apagarlo): el teléfono hace de relé ligero para otros usuarios mientras
  * está en wifi y con batería (15 % o más, o cargando). Cada minuto se revisa; si deja de cumplirse
  * (datos móviles, batería baja) para solo, y la app sigue funcionando igual. No puede leer nada de
  * lo que pasa por él: va cifrado de punta a punta.
@@ -326,7 +326,8 @@ object Supernodo {
 
     fun permitir(c: Context, si: Boolean) = prefs(c).edit().putBoolean("supernodo", si).apply()
 
-    fun permitido(c: Context) = prefs(c).getBoolean("supernodo", false)
+    /** Encendido por defecto: cuantos más usuarios ayudan, más capacidad tiene la red. */
+    fun permitido(c: Context) = prefs(c).getBoolean("supernodo", true)
 
     /** ¿Se cumplen las condiciones ahora? Wifi (sin coste) y batería suficiente o cargando. */
     fun puede(c: Context): Boolean {

@@ -198,16 +198,17 @@ mesh.usarRele("mi-servidor.com:7900") // se aplica al reiniciar la app
 
 ### Supernodos: los usuarios ayudan (opcional)
 
-Con permiso del usuario, el teléfono hace de relé ligero para otros usuarios **solo en wifi y con
+Encendido por defecto, el teléfono hace de relé ligero para otros usuarios **solo en wifi y con
 batería ≥15 % (o cargando)**. Si deja de cumplirse, para solo y la app sigue igual. No puede leer
 nada de lo que pasa por él. Así, cuantos más usuarios, más capacidad, sin depender de un servidor.
 
 ```kotlin
-mesh.hacerDeSupernodo(true)   // apagado por defecto: mejor que lo elija el usuario
+mesh.hacerDeSupernodo(false)  // encendido por defecto; así se apaga (p. ej. si el usuario no quiere)
 mesh.esSupernodo()            // ¿lo está siendo ahora?
 ```
 
-Las apps eligen solas un supernodo (y el relé del proyecto queda de respaldo).
+Las apps eligen solas un supernodo (y el relé del proyecto queda de respaldo). Como usa un poco del
+internet del usuario, dilo en la política de privacidad de tu app y ofrécele apagarlo.
 
 ## 9. Errores y diagnóstico
 

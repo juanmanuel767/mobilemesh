@@ -59,12 +59,12 @@ flowchart LR
     S -- "«puedo ayudar»" --> D
 ```
 
-- Un móvil hace de **supernodo** solo si su dueño lo permite, está **en wifi** y tiene **batería ≥15 %** (o carga). Si deja de cumplirse, para solo: su app sigue igual.
+- Viene **encendido**: un móvil hace de **supernodo** solo cuando está **en wifi** y tiene **batería ≥15 %** (o carga). Si deja de cumplirse, para solo: su app sigue igual.
 - **No puede leer nada** de lo que pasa por él: todo va cifrado de punta a punta.
 - Si un supernodo se va, las apps pasan al relé del proyecto y eligen otro solas.
 
 ```kotlin
-mesh.hacerDeSupernodo(true)   // apagado por defecto: lo decide el usuario
+mesh.hacerDeSupernodo(false)  // encendido por defecto; así se apaga si el usuario no quiere
 ```
 
 ✅ Probado en móviles reales: un mensaje entre dos móviles con datos móviles pasó por un supernodo en casa, sin tocar el relé del proyecto.
