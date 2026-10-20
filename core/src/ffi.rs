@@ -265,6 +265,23 @@ fn llamada_por_rele(dir: PathBuf, me: Identity, events: Option<Arc<dyn Events>>)
     }
 }
 
+/// Escucha del supernodo y su puerto abierto en el router. Hay routers que no dejan abrir un
+/// puerto hacia un puerto interno que ya usan reglas de otro aparato (aunque ese aparato ya no
+/// esté): entonces se prueba con el siguiente puerto interno. Sin router con UPnP, se escucha en
+/// `port` y el puerto público queda pendiente (se reintenta cada minuto).
+fn abrir_supernodo(port: u16) -> std::io::Result<(TcpListener, u16, Option<u16>)> {
+    let escuchar = |p: u16| TcpListener::bind(("::", p)).or_else(|_| TcpListener::bind(("0.0.0.0", p)));
+    for p in port..port.saturating_add(20) {
+        let Ok(l) = escuchar(p) else { continue };
+        match crate::upnp::open(p, 3600) {
+            Ok(publico) => return Ok((l, p, Some(publico))),
+            Err(e) if e.to_string().contains("no hay router") => return Ok((l, p, None)),
+            Err(_) => continue, // el router contestó pero no quiso: otro puerto interno
+        }
+    }
+    Ok((escuchar(port)?, port, None))
+}
+
 fn public_server(store: &Store) -> R<String> {
     store
         .setting("publico_elegido")?
@@ -858,7 +875,7 @@ impl Mesh {
         if g.as_ref().is_some_and(|s| s.activo()) {
             return Ok(true);
         }
-        let l = TcpListener::bind(("::", port)).or_else(|_| TcpListener::bind(("0.0.0.0", port))).map_err(|e| fail(e.to_string()))?;
+        let (l, port, mut publico) = abrir_supernodo(port).map_err(|e| fail(e.to_string()))?;
         let nodo = crate::supernodo::Supernodo::arrancar(l)?;
         let director = crate::directorio::reles(&Store::open(&self.dir, self.me.db_key())?).into_iter().next().ok_or_else(|| fail("no hay relé director"))?;
         // Mi dirección en la wifi (la de salida hacia el director), solo si es privada.
@@ -869,8 +886,7 @@ impl Mesh {
             .map(|a| format!("{}:{port}", a.ip()));
         let vivo = nodo.clone();
         thread::spawn(move || {
-            let mut publico = None;
-            let mut vuelta = 0u32;
+            let mut vuelta = 1u32;
             while vivo.activo() {
                 // El puerto del router caduca a la hora: se renueva cada 30 min.
                 if publico.is_none() || vuelta.is_multiple_of(30) {

@@ -28,18 +28,17 @@ pub fn open(port: u16, seconds: u32) -> Result<u16> {
             Ok(_) => drop(soap(&control, "DeletePortMapping", &clave)),
             Err(_) => {}
         }
-        soap(
-            &control,
-            "AddPortMapping",
-            &format!(
-                "{clave}<NewInternalPort>{port}</NewInternalPort><NewInternalClient>{local}</NewInternalClient>\
-                 <NewEnabled>1</NewEnabled><NewPortMappingDescription>mobilemesh</NewPortMappingDescription>\
-                 <NewLeaseDuration>{seconds}</NewLeaseDuration>"
-            ),
-        )?;
-        return Ok(public);
+        let pedido = format!(
+            "{clave}<NewInternalPort>{port}</NewInternalPort><NewInternalClient>{local}</NewInternalClient>\
+             <NewEnabled>1</NewEnabled><NewPortMappingDescription>mobilemesh</NewPortMappingDescription>\
+             <NewLeaseDuration>{seconds}</NewLeaseDuration>"
+        );
+        // Si el router no quiere este puerto público, se prueba el siguiente.
+        if soap(&control, "AddPortMapping", &pedido).is_ok() {
+            return Ok(public);
+        }
     }
-    Err("todos los puertos cercanos están ocupados en el router".into())
+    Err("el router no aceptó abrir ningún puerto cercano".into())
 }
 
 /// Todas las reglas TCP del router: (puerto público, IP del aparato). Se para en la primera que falte.
