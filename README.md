@@ -180,7 +180,7 @@ flowchart LR
 - Relé que no puede leer nada, mensajes rellenados a tamaño fijo, bloqueo de contactos, límites contra el spam, rechazo de impostores.
 - Supernodos: un móvil en wifi hace de relé para otros con datos móviles y deja de hacerlo solo al bajar del 15 % de batería.
 
-**Pendiente:** iPhone · usuarios por nombre en la web · supernodos en la web · más guardianes y guías públicos (hoy dependen de un solo móvil) · liberar nombres abandonados · avisos automáticos de Wompi (webhooks) · medir el gasto de batería de un supernodo.
+**Pendiente:** iPhone · usuarios por nombre en la web · supernodos en la web · más guardianes y guías públicos (hoy dependen de un solo móvil) · liberar nombres abandonados · avisos automáticos de Wompi (webhooks).
 
 ## 🧑‍💻 Para programadores
 
