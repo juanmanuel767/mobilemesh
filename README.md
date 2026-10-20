@@ -75,7 +75,7 @@ mesh.hacerDeSupernodo(false)  // encendido por defecto; así se apaga si el usua
 ### React Native (Android)
 
 ```sh
-npm install github:juanmanuel767/mobilemesh#v0.1.8
+npm install github:juanmanuel767/mobilemesh#v0.1.9
 ```
 
 ```js
@@ -99,7 +99,7 @@ En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
 ```kotlin
 dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
 
-dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.8") }
+dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.9") }
 ```
 
 ```kotlin
