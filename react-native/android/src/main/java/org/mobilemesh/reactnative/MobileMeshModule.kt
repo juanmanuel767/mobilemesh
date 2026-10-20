@@ -159,6 +159,10 @@ class MobileMeshModule(private val ctx: ReactApplicationContext) : ReactContextB
 
     @ReactMethod fun diagnostico(p: Promise) = trabajar(p) { m().diagnostico() }
 
+    @ReactMethod fun hacerDeSupernodo(activo: Boolean, p: Promise) = trabajar(p) { m().hacerDeSupernodo(activo); null }
+
+    @ReactMethod fun esSupernodo(p: Promise) = trabajar(p) { m().esSupernodo() }
+
     @ReactMethod
     fun enviar(contacto: String, texto: String, p: Promise) =
         trabajar(p) { m().nucleo.send(contacto, texto).let { CopiaAutomatica.cambio(ctx); if (it.inMailbox) "en buzón" else "entregado" } }

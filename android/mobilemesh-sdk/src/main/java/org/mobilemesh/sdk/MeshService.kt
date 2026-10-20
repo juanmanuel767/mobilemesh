@@ -312,14 +312,14 @@ class BootReceiver : BroadcastReceiver() {
 
 /**
  * Supernodo: si el usuario lo permite, el teléfono hace de relé ligero para otros usuarios mientras
- * está en wifi y con batería (30 % o más, o cargando). Cada minuto se revisa; si deja de cumplirse
+ * está en wifi y con batería (15 % o más, o cargando). Cada minuto se revisa; si deja de cumplirse
  * (datos móviles, batería baja) para solo, y la app sigue funcionando igual. No puede leer nada de
  * lo que pasa por él: va cifrado de punta a punta.
  */
 object Supernodo {
     /** Un solo supernodo por teléfono: la primera app que lo abre se queda el puerto. */
     const val PUERTO = 7840
-    private const val BATERIA_MIN = 30
+    private const val BATERIA_MIN = 15
     private var hilo: Thread? = null
 
     private fun prefs(c: Context) = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)

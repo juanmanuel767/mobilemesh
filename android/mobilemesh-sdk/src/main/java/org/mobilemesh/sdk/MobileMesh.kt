@@ -269,7 +269,7 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
 
     /**
      * Ayudar a otros usuarios: este teléfono hace de relé (supernodo) solo en wifi y con batería
-     * (30 % o más, o cargando). Apagado por defecto: mejor que lo elija el usuario. No puede leer
+     * (15 % o más, o cargando). Apagado por defecto: mejor que lo elija el usuario. No puede leer
      * nada de lo que pasa por él. Surte efecto en menos de un minuto.
      */
     fun hacerDeSupernodo(activo: Boolean) = Supernodo.permitir(context, activo)

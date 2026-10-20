@@ -99,6 +99,9 @@ export const MobileMesh = {
   datos: async (coleccion) => JSON.parse(await N.datos(coleccion)),
   borrar: (coleccion, id) => N.borrar(coleccion, id),
   usarRele: (direccion) => N.usarRele(direccion ?? null),
+  /** Ayudar a otros: este móvil hace de relé solo en wifi y con batería ≥15 % (apagado por defecto). */
+  hacerDeSupernodo: (activo) => N.hacerDeSupernodo(!!activo),
+  esSupernodo: () => N.esSupernodo(),
   diagnostico: () => N.diagnostico(),
 };
 
