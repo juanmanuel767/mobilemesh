@@ -808,6 +808,12 @@ impl Mesh {
         let l = TcpListener::bind(("::", port)).or_else(|_| TcpListener::bind(("0.0.0.0", port))).map_err(|e| fail(e.to_string()))?;
         let nodo = crate::supernodo::Supernodo::arrancar(l)?;
         let director = crate::directorio::reles(&Store::open(&self.dir, self.me.db_key())?).into_iter().next().ok_or_else(|| fail("no hay relé director"))?;
+        // Mi dirección en la wifi (la de salida hacia el director), solo si es privada.
+        let wifi = std::net::UdpSocket::bind("0.0.0.0:0")
+            .and_then(|u| u.connect(director.as_str()).and(u.local_addr()))
+            .ok()
+            .filter(|a| matches!(a.ip(), std::net::IpAddr::V4(v4) if v4.is_private()))
+            .map(|a| format!("{}:{port}", a.ip()));
         let vivo = nodo.clone();
         thread::spawn(move || {
             let mut publico = None;
@@ -818,7 +824,7 @@ impl Mesh {
                     publico = crate::upnp::open(port, 3600).ok();
                 }
                 if let Some(p) = publico {
-                    crate::supernodo::apuntarse(&director, p);
+                    crate::supernodo::apuntarse(&director, p, wifi.as_deref());
                 }
                 vuelta += 1;
                 thread::sleep(Duration::from_secs(60));
@@ -1088,7 +1094,10 @@ impl Mesh {
                         let (atender, secret, d, m, sn2) = (llamada_por_rele(dir.clone(), me.clone(), events.clone()), secret.clone(), dir.clone(), me.clone(), sn.clone());
                         // Se suelta solo cuando se elija otro supernodo.
                         let sigue = move || Store::open(&d, m.db_key()).ok().and_then(|s| s.setting("supernodo").ok().flatten()).as_deref() == Some(sn2.as_str());
-                        thread::spawn(move || crate::relay::listen_while(sn, secret, sigue, atender));
+                        // Desde su misma casa solo se le llega por la wifi; desde fuera, por la pública.
+                        let (publica, wifi) = crate::relay::supernode_parts(&sn);
+                        let por = wifi.filter(|w| w.parse().is_ok_and(|a| crate::transport::reachable(&a))).unwrap_or(publica).to_string();
+                        thread::spawn(move || crate::relay::listen_while(por, secret, sigue, atender));
                         escuchando = store.setting("supernodo").ok().flatten();
                     }
                     thread::sleep(Duration::from_secs(10 * 60));

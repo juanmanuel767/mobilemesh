@@ -76,8 +76,9 @@ struct State {
     last_purge: Option<Instant>,
     /// buzón → (ficha de avisos, último aviso)
     push: HashMap<String, (String, Option<std::time::Instant>)>,
-    /// supernodo «ip:puerto» → cuándo se comprobó que se llega a él desde fuera
-    supernodos: HashMap<String, Instant>,
+    /// supernodo «ip:puerto» → (cuándo se comprobó que se llega a él desde fuera, su dirección
+    /// en la wifi de su casa, para quien esté en esa misma red)
+    supernodos: HashMap<String, (Instant, Option<String>)>,
 }
 
 impl State {
@@ -207,7 +208,7 @@ impl Relay {
     }
 
     /// Apunta el supernodo `ip:puerto` si contesta a QUIEN como un relé. Devuelve si quedó apuntado.
-    fn add_supernode(&self, ip: IpAddr, puerto: u16) -> bool {
+    fn add_supernode(&self, ip: IpAddr, puerto: u16, wifi: Option<String>) -> bool {
         let addr = std::net::SocketAddr::new(ip, puerto);
         let contesta = TcpStream::connect_timeout(&addr, WAIT).is_ok_and(|mut c| {
             writeln!(c, "QUIEN").is_ok() && read_line(&mut Deadline(&c, Instant::now() + WAIT)).is_ok_and(|l| l.parse::<IpAddr>().is_ok())
@@ -216,13 +217,13 @@ impl Relay {
             return false;
         }
         let mut st = self.lock();
-        st.supernodos.retain(|_, t| t.elapsed() < SUPERNODO_VIVO);
+        st.supernodos.retain(|_, (t, _)| t.elapsed() < SUPERNODO_VIVO);
         let clave = addr.to_string();
         let de_esa_ip = st.supernodos.keys().filter(|k| k.parse::<std::net::SocketAddr>().is_ok_and(|a| a.ip() == ip) && **k != clave).count();
         if !st.supernodos.contains_key(&clave) && (de_esa_ip >= SUPERNODOS_POR_IP || st.supernodos.len() >= MAX_SUPERNODOS) {
             return false;
         }
-        st.supernodos.insert(clave, Instant::now());
+        st.supernodos.insert(clave, (Instant::now(), wifi));
         true
     }
 
@@ -241,7 +242,7 @@ impl Relay {
             st.push.len(),
             self.forwarded.load(Ordering::Relaxed),
             self.max.unwrap_or(MAX_CONNECTIONS),
-            st.supernodos.values().filter(|t| t.elapsed() < SUPERNODO_VIVO).count(),
+            st.supernodos.values().filter(|(t, _)| t.elapsed() < SUPERNODO_VIVO).count(),
         )
     }
 
@@ -279,16 +280,28 @@ impl Relay {
                     IpAddr::V4(v4) => !(v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_unspecified()),
                     IpAddr::V6(v6) => !(v6.is_loopback() || v6.is_unspecified() || v6.to_ipv4_mapped().is_some()),
                 };
-                let ok = publica && arg.parse::<u16>().is_ok_and(|p| p > 0 && self.add_supernode(ip, p));
+                // «SUPERNODO <puerto> [ip-de-su-wifi:puerto]»: la de la wifi solo si es privada.
+                let mut partes = arg.split_whitespace();
+                let puerto = partes.next().and_then(|p| p.parse::<u16>().ok()).filter(|p| *p > 0);
+                let wifi = partes.next().and_then(|w| w.parse::<std::net::SocketAddr>().ok()).filter(|w| match w.ip() {
+                    IpAddr::V4(v4) => v4.is_private(),
+                    IpAddr::V6(v6) => v6.segments()[0] & 0xfe00 == 0xfc00,
+                });
+                let ok = publica && puerto.is_some_and(|p| self.add_supernode(ip, p, wifi.map(|w| w.to_string())));
                 writeln!(s, "{}", if ok { "OK" } else { "NO" })?;
                 Ok(())
             }
             "SUPERNODOS" => {
                 let mut st = self.lock();
-                st.supernodos.retain(|_, t| t.elapsed() < SUPERNODO_VIVO);
-                let mut lista: Vec<(&String, &Instant)> = st.supernodos.iter().collect();
-                lista.sort_by_key(|(_, t)| std::cmp::Reverse(**t));
-                let lista: Vec<&str> = lista.iter().take(SUPERNODOS_DADOS).map(|(a, _)| a.as_str()).collect();
+                st.supernodos.retain(|_, (t, _)| t.elapsed() < SUPERNODO_VIVO);
+                let mut lista: Vec<_> = st.supernodos.iter().collect();
+                lista.sort_by_key(|(_, (t, _))| std::cmp::Reverse(*t));
+                // «pública» o «pública>wifi»: quien esté en la misma casa usa la de la wifi.
+                let lista: Vec<String> = lista
+                    .iter()
+                    .take(SUPERNODOS_DADOS)
+                    .map(|(a, (_, w))| w.as_ref().map_or_else(|| a.to_string(), |w| format!("{a}>{w}")))
+                    .collect();
                 writeln!(s, "{}", lista.join(","))?;
                 Ok(())
             }
@@ -553,11 +566,12 @@ mod pruebas {
         std::thread::spawn(move || super::Relay::default().serve(l));
         let director = super::Relay::default();
         let ip: std::net::IpAddr = "127.0.0.1".parse().unwrap();
-        assert!(director.add_supernode(ip, puerto));
+        assert!(director.add_supernode(ip, puerto, Some("192.168.1.9:7840".into())));
         // Un puerto donde nadie contesta como relé: no entra.
         let mudo = TcpListener::bind("127.0.0.1:0").unwrap();
-        assert!(!director.add_supernode(ip, mudo.local_addr().unwrap().port()));
+        assert!(!director.add_supernode(ip, mudo.local_addr().unwrap().port(), None));
         assert_eq!(director.lock().supernodos.len(), 1);
+        assert_eq!(director.lock().supernodos.values().next().unwrap().1.as_deref(), Some("192.168.1.9:7840"));
         assert!(director.estado().contains(r#""supernodos":1"#));
     }
 

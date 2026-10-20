@@ -1542,6 +1542,18 @@ fn el_supernodo_elegido_va_primero_en_la_invitacion() {
     // Primero el supernodo y, detrás, los mismos relés del proyecto de respaldo.
     let buzon = mobilemesh_core::relay::mailbox_id(&store.mailbox_secret().unwrap());
     assert_eq!(con, format!("relay=203.0.113.7:7840/{buzon}|{sin}"));
+    // Con su dirección de la wifi: detrás de la pública (para quien esté en su misma casa).
+    store.set_setting("supernodo", Some("203.0.113.7:7840>192.168.1.9:7840")).unwrap();
+    let con_wifi = store.relay_route().unwrap().unwrap();
+    assert_eq!(con_wifi, format!("relay=203.0.113.7:7840/{buzon}|relay=192.168.1.9:7840/{buzon}|{sin}"));
     store.set_setting("supernodo", None).unwrap();
     assert_eq!(store.relay_route().unwrap().unwrap(), sin);
+}
+
+#[test]
+fn un_rele_en_la_wifi_de_otra_casa_se_salta_al_momento() {
+    // 10.123.x.x no es la red de este equipo: no se espera a que caduque la conexión.
+    let t = std::time::Instant::now();
+    assert!(mobilemesh_core::transport::open("relay=10.123.45.6:7840/0123456789abcdef0123456789abcdef").is_err());
+    assert!(t.elapsed() < std::time::Duration::from_secs(1), "{:?}", t.elapsed());
 }

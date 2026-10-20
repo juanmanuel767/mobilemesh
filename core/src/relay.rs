@@ -220,6 +220,14 @@ pub fn answer(relay: &str, token: &str) -> Result<crate::net::Stream> {
     Ok(s)
 }
 
+/// Un supernodo como lo da el director, «pública» o «pública>wifi» → (pública, wifi).
+pub fn supernode_parts(entrada: &str) -> (&str, Option<&str>) {
+    match entrada.split_once('>') {
+        Some((p, w)) => (p, Some(w)),
+        None => (entrada, None),
+    }
+}
+
 /// Supernodos vivos que da el director (el relé del proyecto): «ip:puerto».
 pub fn supernodes(director: &str) -> Result<Vec<String>> {
     let mut s = crate::net::connect(director, WAIT)?;

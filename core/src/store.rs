@@ -752,8 +752,11 @@ impl Store {
 
     /// Ruta por los relés para mi invitación: «relay=host:puerto/buzón», varias separadas por «|».
     pub fn relay_route(&self) -> Result<Option<String>> {
-        // El supernodo elegido va primero (descarga al relé del proyecto); el resto, de respaldo.
-        let relays: Vec<String> = self.setting("supernodo")?.into_iter().chain(self.relays()?).collect();
+        // El supernodo elegido va primero (descarga al relé del proyecto), con su dirección de la wifi
+        // detrás (para quien esté en su misma casa); el resto, de respaldo.
+        let sn = self.setting("supernodo")?;
+        let sn = sn.as_deref().map(crate::relay::supernode_parts);
+        let relays: Vec<String> = sn.into_iter().flat_map(|(p, w)| std::iter::once(p).chain(w)).map(String::from).chain(self.relays()?).collect();
         if relays.is_empty() {
             return Ok(None);
         }

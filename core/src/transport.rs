@@ -33,7 +33,11 @@ pub fn open(route: &str) -> Result<Stream> {
             Some(rest) => rest
                 .rsplit_once('/')
                 .ok_or_else(|| "ruta de relé incompleta".into())
-                .and_then(|(relay, id)| crate::relay::dial(relay, id)),
+                // Un relé en la wifi de otra casa (supernodo): se salta al momento, como una directa.
+                .and_then(|(relay, id)| match relay.parse::<std::net::SocketAddr>() {
+                    Ok(a) if !reachable(&a) => Err("relé en una red privada de otra casa".into()),
+                    _ => crate::relay::dial(relay, id),
+                }),
             None => part
                 .to_socket_addrs()
                 .map_err(Into::into)
@@ -57,7 +61,7 @@ pub fn open(route: &str) -> Result<Stream> {
 /// solo se alcanza desde la misma red: si mi dirección de salida hacia ella no está en su mismo
 /// bloque /16, se salta y se va directo al relé (con datos móviles se perdían segundos esperando).
 // ponytail: compara el /16; una red privada más grande que eso se trataría como «otra red».
-fn reachable(target: &std::net::SocketAddr) -> bool {
+pub(crate) fn reachable(target: &std::net::SocketAddr) -> bool {
     // IPv6: solo si tengo ruta hacia ella (sin IPv6, se salta al momento en vez de esperar).
     let std::net::IpAddr::V4(t) = target.ip() else {
         return std::net::UdpSocket::bind("[::]:0").and_then(|u| u.connect(target)).is_ok();

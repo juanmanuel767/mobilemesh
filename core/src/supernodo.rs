@@ -219,13 +219,14 @@ fn empalmar(a: TcpStream, b: TcpStream, bytes: &Arc<AtomicU64>) {
     }
 }
 
-/// Se apunta en el director como supernodo en `puerto` (el público, abierto en el router).
-/// `true` si el director lo aceptó (comprobó desde fuera que se le llega).
-pub fn apuntarse(director: &str, puerto: u16) -> bool {
+/// Se apunta en el director como supernodo en `puerto` (el público, abierto en el router) y, si se
+/// sabe, con su dirección en la wifi (`wifi`, «ip:puerto»), para quien esté en esa misma casa: el
+/// router no deja llegar a la IP pública desde dentro. `true` si el director lo aceptó.
+pub fn apuntarse(director: &str, puerto: u16, wifi: Option<&str>) -> bool {
     (|| -> Result<bool> {
         let mut s = crate::net::connect(director, WAIT)?;
         s.set_read_timeout(Some(WAIT * 2))?;
-        writeln!(s, "SUPERNODO {puerto}")?;
+        writeln!(s, "SUPERNODO {puerto} {}", wifi.unwrap_or_default())?;
         Ok(read_line(&mut s)? == "OK")
     })()
     .unwrap_or(false)
