@@ -20,5 +20,5 @@ android {
 dependencies {
     implementation "com.facebook.react:react-android"
     // La app puede probar otra versión del SDK con `ext { mobilemeshVersion = "…" }` en su build.gradle.
-    implementation "com.github.juanmanuel767:mobilemesh:${rootProject.ext.has("mobilemeshVersion") ? rootProject.ext.get("mobilemeshVersion") : "v0.1.5"}"
+    implementation "com.github.juanmanuel767:mobilemesh:${rootProject.ext.has("mobilemeshVersion") ? rootProject.ext.get("mobilemeshVersion") : "v0.1.6"}"
 }

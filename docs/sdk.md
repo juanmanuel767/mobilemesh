@@ -12,7 +12,7 @@ Ejemplo completo y funcionando: [`examples/notas`](../examples/notas/src/main/ja
 // settings.gradle.kts
 dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
 // build.gradle.kts de tu app
-dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.5") }
+dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.6") }
 ```
 
 Ya compilado, con el núcleo en Rust dentro (teléfonos de 64 bits, `arm64-v8a`). Para compilarlo tú: `android/build.sh`.
@@ -195,6 +195,19 @@ mesh-rele 0.0.0.0:7900   # en un equipo con dirección pública
 ```kotlin
 mesh.usarRele("mi-servidor.com:7900") // se aplica al reiniciar la app
 ```
+
+### Supernodos: los usuarios ayudan (opcional)
+
+Con permiso del usuario, el teléfono hace de relé ligero para otros usuarios **solo en wifi y con
+batería ≥15 % (o cargando)**. Si deja de cumplirse, para solo y la app sigue igual. No puede leer
+nada de lo que pasa por él. Así, cuantos más usuarios, más capacidad, sin depender de un servidor.
+
+```kotlin
+mesh.hacerDeSupernodo(true)   // apagado por defecto: mejor que lo elija el usuario
+mesh.esSupernodo()            // ¿lo está siendo ahora?
+```
+
+Las apps eligen solas un supernodo (y el relé del proyecto queda de respaldo).
 
 ## 9. Errores y diagnóstico
 

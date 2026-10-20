@@ -33,7 +33,7 @@ Es un proyecto joven. Si te gusta, pruébalo, déjale una ⭐ y cuéntanos qué 
 ### React Native (Android)
 
 ```sh
-npm install github:juanmanuel767/mobilemesh#v0.1.5
+npm install github:juanmanuel767/mobilemesh#v0.1.6
 ```
 
 ```js
@@ -57,7 +57,7 @@ En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
 ```kotlin
 dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
 
-dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.5") }
+dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.6") }
 ```
 
 ```kotlin

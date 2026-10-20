@@ -1,6 +1,6 @@
 {
   "name": "react-native-mobilemesh",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "MobileMesh para React Native (Android): base de datos, mensajes, archivos y avisos sin servidores",
   "main": "react-native/index.js",
   "files": ["react-native/index.js", "react-native/android/build.gradle", "react-native/android/src", "react-native.config.js"],
