@@ -235,6 +235,20 @@ const GUARDIAN: &str = "guardián";
 /// Guardián universal: el primero del directorio (o de la lista fija, en un teléfono nuevo sin
 /// directorio, después de intentar descargarlo de los relés universales).
 /// Guía de nombres: la elegida con `use_name_guide` o la universal.
+/// Lo que se hace con cada llamada que llega por un relé: atenderla como una conexión directa.
+fn llamada_por_rele(dir: PathBuf, me: Identity, events: Option<Arc<dyn Events>>) -> impl Fn(crate::net::Stream) + Send + Sync + 'static {
+    move |stream| {
+        if !OFFLINE.load(Ordering::SeqCst)
+            && let Some(_slot) = crate::Slot::take("rele:")
+            && let Ok(store) = Store::open(&dir, me.db_key())
+            && let Ok(n @ 1..) = serve(&store, &me, stream)
+            && let Some(e) = &events
+        {
+            e.received(n as u32);
+        }
+    }
+}
+
 fn name_guide(store: &Store) -> R<String> {
     store.setting("guia_elegida")?.or_else(|| crate::nombres::UNIVERSALES.first().map(|g| g.to_string())).ok_or_else(|| fail("no hay ninguna guía de nombres configurada"))
 }
@@ -1044,18 +1058,35 @@ impl Mesh {
         thread::spawn(move || Store::open(&d, m.db_key()).map(|s| crate::directorio::actualizar(&s)));
         let secret = store.mailbox_secret()?;
         for relay in store.relays()? {
-            let (dir, me, events, secret) = (dir.clone(), me.clone(), events.clone(), secret.clone());
+            let (atender, secret) = (llamada_por_rele(dir.clone(), me.clone(), events.clone()), secret.clone());
+            thread::spawn(move || crate::relay::listen(relay, secret, atender));
+        }
+        // Relés automáticos: además, buzón en un supernodo (móvil de otro usuario), que va primero en
+        // mi invitación y descarga al relé del proyecto. Si se va, se elige otro.
+        if store.setting("rele")?.is_none()
+            && let Some(director) = crate::directorio::reles(&store).into_iter().next()
+        {
+            let (dir, me, events) = (dir.clone(), me.clone(), events.clone());
             thread::spawn(move || {
-                crate::relay::listen(relay, secret, move |stream| {
-                    if !OFFLINE.load(Ordering::SeqCst)
-                        && let Some(_slot) = crate::Slot::take("rele:")
-                        && let Ok(store) = Store::open(&dir, me.db_key())
-                        && let Ok(n @ 1..) = serve(&store, &me, stream)
-                        && let Some(e) = &events
-                    {
-                        e.received(n as u32);
+                let Ok(store) = Store::open(&dir, me.db_key()) else { return };
+                let mut escuchando: Option<String> = None;
+                loop {
+                    let vivos = crate::relay::supernodes(&director).unwrap_or_default();
+                    let actual = store.setting("supernodo").ok().flatten().filter(|s| vivos.contains(s));
+                    let elegido = actual.or_else(|| {
+                        let todos: Vec<&str> = vivos.iter().map(String::as_str).collect();
+                        crate::relay::choose(&todos, &secret).into_iter().next()
+                    });
+                    let _ = store.set_setting("supernodo", elegido.as_deref());
+                    if let Some(sn) = elegido.filter(|sn| escuchando.as_ref() != Some(sn)) {
+                        let (atender, secret, d, m, sn2) = (llamada_por_rele(dir.clone(), me.clone(), events.clone()), secret.clone(), dir.clone(), me.clone(), sn.clone());
+                        // Se suelta solo cuando se elija otro supernodo.
+                        let sigue = move || Store::open(&d, m.db_key()).ok().and_then(|s| s.setting("supernodo").ok().flatten()).as_deref() == Some(sn2.as_str());
+                        thread::spawn(move || crate::relay::listen_while(sn, secret, sigue, atender));
+                        escuchando = store.setting("supernodo").ok().flatten();
                     }
-                })
+                    thread::sleep(Duration::from_secs(10 * 60));
+                }
             });
         }
         thread::spawn(move || {

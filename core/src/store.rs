@@ -752,7 +752,8 @@ impl Store {
 
     /// Ruta por los relés para mi invitación: «relay=host:puerto/buzón», varias separadas por «|».
     pub fn relay_route(&self) -> Result<Option<String>> {
-        let relays = self.relays()?;
+        // El supernodo elegido va primero (descarga al relé del proyecto); el resto, de respaldo.
+        let relays: Vec<String> = self.setting("supernodo")?.into_iter().chain(self.relays()?).collect();
         if relays.is_empty() {
             return Ok(None);
         }

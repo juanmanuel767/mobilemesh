@@ -220,12 +220,30 @@ pub fn answer(relay: &str, token: &str) -> Result<crate::net::Stream> {
     Ok(s)
 }
 
+/// Supernodos vivos que da el director (el relé del proyecto): «ip:puerto».
+pub fn supernodes(director: &str) -> Result<Vec<String>> {
+    let mut s = crate::net::connect(director, WAIT)?;
+    s.set_read_timeout(Some(WAIT))?;
+    writeln!(s, "SUPERNODOS")?;
+    Ok(read_line_max(&mut s, 8192)?.split(',').map(str::trim).filter(|a| !a.is_empty()).map(String::from).collect())
+}
+
 /// Mantiene el buzón registrado en el relé y entrega cada llamada a `on_call`.
 /// Si se cae, vuelve a conectar (esperando cada vez más, hasta 1 minuto). Nunca termina.
 pub fn listen(relay: String, secret: String, on_call: impl Fn(crate::net::Stream) + Send + Sync + 'static) {
+    escuchar(relay, secret, || true, None, on_call)
+}
+
+/// Como `listen`, pero termina cuando `seguir` deja de cumplirse (se mira al menos cada 2 min).
+/// Para supernodos: cuando se elige otro, el buzón en el viejo se suelta.
+pub fn listen_while(relay: String, secret: String, seguir: impl Fn() -> bool, on_call: impl Fn(crate::net::Stream) + Send + Sync + 'static) {
+    escuchar(relay, secret, seguir, Some(Duration::from_secs(120)), on_call)
+}
+
+fn escuchar(relay: String, secret: String, seguir: impl Fn() -> bool, cada: Option<Duration>, on_call: impl Fn(crate::net::Stream) + Send + Sync + 'static) {
     let on_call = Arc::new(on_call);
     let mut pause = Duration::from_secs(2);
-    loop {
+    while seguir() {
         let session = (|| -> Result<()> {
             let mut control = register(&relay, &secret)?;
             pause = Duration::from_secs(2);
@@ -236,7 +254,8 @@ pub fn listen(relay: String, secret: String, on_call: impl Fn(crate::net::Stream
                     thread::sleep(Duration::from_secs(25));
                 }
             });
-            control.set_read_timeout(None)?;
+            // Con `cada`, la lectura despierta de vez en cuando para mirar si hay que seguir.
+            control.set_read_timeout(cada)?;
             loop {
                 let line = read_line(&mut control)?;
                 let Some(token) = line.strip_prefix("LLAMADA ") else { continue };
@@ -249,6 +268,9 @@ pub fn listen(relay: String, secret: String, on_call: impl Fn(crate::net::Stream
             }
         })();
         let _ = session;
+        if !seguir() {
+            return;
+        }
         thread::sleep(pause);
         pause = (pause * 2).min(Duration::from_secs(60));
     }

@@ -1528,3 +1528,17 @@ fn un_supernodo_empalma_llamadas_y_deja_las_cartas_al_rele() {
     thread::sleep(std::time::Duration::from_millis(400));
     assert!(relay::register(&sn, "otro-buzon").is_err());
 }
+
+#[test]
+fn el_supernodo_elegido_va_primero_en_la_invitacion() {
+    let d = device("con-supernodo");
+    let store = st(&d.0);
+    let sin = store.relay_route().unwrap().unwrap();
+    store.set_setting("supernodo", Some("203.0.113.7:7840")).unwrap();
+    let con = store.relay_route().unwrap().unwrap();
+    // Primero el supernodo y, detrás, los mismos relés del proyecto de respaldo.
+    let buzon = mobilemesh_core::relay::mailbox_id(&store.mailbox_secret().unwrap());
+    assert_eq!(con, format!("relay=203.0.113.7:7840/{buzon}|{sin}"));
+    store.set_setting("supernodo", None).unwrap();
+    assert_eq!(store.relay_route().unwrap().unwrap(), sin);
+}
