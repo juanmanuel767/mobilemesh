@@ -32,7 +32,8 @@ private const val PUERTO = 7900
 // --limite: el relé nunca usa más de 500 KB/s (~4 Mbit/s) para que el internet de casa vaya bien.
 // --websocket: puente para navegadores (apps web) en su propio puerto.
 private const val PUERTO_WEB = 7901
-private val ARGS = listOf("0.0.0.0:$PUERTO", "--max", "20000", "--limite", "500", "--websocket", "0.0.0.0:$PUERTO_WEB")
+// --estado: números del relé (solo en local), para vigilar su uso desde este móvil.
+private val ARGS = listOf("0.0.0.0:$PUERTO", "--max", "20000", "--limite", "500", "--websocket", "0.0.0.0:$PUERTO_WEB", "--estado", "127.0.0.1:7909")
 
 /** Guardián (pieza aparte: su programa, su carpeta, su puerto y su registro). */
 private const val PUERTO_GUARDIAN = 7954

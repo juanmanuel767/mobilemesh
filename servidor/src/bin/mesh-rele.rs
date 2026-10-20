@@ -4,13 +4,14 @@
 //! Solo empalma conexiones cifradas: no puede leerlas, no guarda nada y no escribe registros.
 
 use mobilemesh_servidor::Relay;
-use std::{net::TcpListener, process::exit};
+use std::{io::Write, net::TcpListener, process::exit};
 
 /// Uso: `mesh-rele [ip:puerto] [--avisos <programa>] [--max <conexiones>] [--directorio <archivo>] [--limite <KB/s>] [--websocket <ip:puerto>] [--tls <cert.pem> <clave.pem>]`.
 /// `--websocket`: también acepta navegadores (WebSocket) en ese puerto.
 /// `--limite`: velocidad máxima del relé sumando todo, para no dejar sin internet su casa. El programa (opcional)
 /// se ejecuta con la ficha de avisos del teléfono cuando le llega una carta; por ejemplo
 /// `tools/avisar-fcm.sh`. `--max` cambia cuántas conexiones atiende a la vez (1024 por defecto).
+/// `--estado <127.0.0.1:puerto>`: entrega los números del relé en JSON (para vigilar su uso), solo en local.
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let notifier = args.iter().position(|a| a == "--avisos").and_then(|i| args.get(i + 1)).cloned();
@@ -59,5 +60,25 @@ fn main() {
     });
     // Directorio firmado de relés y guardianes que se entrega a las apps (se lee en cada petición).
     relay.directorio = args.iter().position(|a| a == "--directorio").and_then(|i| args.get(i + 1)).cloned();
+    if let Some(dir) = args.iter().position(|a| a == "--estado").and_then(|i| args.get(i + 1)) {
+        // Solo en local: el puente web llega como 127.0.0.1 al puerto del relé, pero no a este.
+        let l = match TcpListener::bind(dir) {
+            Ok(l) if l.local_addr().is_ok_and(|a| a.ip().is_loopback()) => l,
+            _ => {
+                eprintln!("--estado necesita una dirección local libre (127.0.0.1:puerto)");
+                exit(1);
+            }
+        };
+        println!("números del relé en {dir}");
+        let (relay, inicio) = (relay.clone(), std::time::Instant::now());
+        std::thread::spawn(move || {
+            for mut s in l.incoming().flatten() {
+                let json = relay.estado();
+                // De una vez: quien lee no recibe la línea a trozos.
+                let linea = format!("{},\"encendido\":{}}}\n", &json[..json.len() - 1], inicio.elapsed().as_secs());
+                let _ = s.write_all(linea.as_bytes());
+            }
+        });
+    }
     relay.serve(listener);
 }

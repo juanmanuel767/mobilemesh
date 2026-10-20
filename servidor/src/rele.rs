@@ -146,6 +146,8 @@ impl Read for Deadline<'_> {
 pub struct Relay {
     state: Arc<Mutex<State>>,
     pub forwarded: Arc<AtomicU64>,
+    /// Llamadas empalmadas en este momento.
+    calls: Arc<AtomicU64>,
     /// Programa que se ejecuta con la ficha de avisos al llegar una carta (opcional).
     pub notifier: Option<String>,
     /// Velocidad máxima, sumando todas las conexiones empalmadas (bytes por segundo), para que el
@@ -191,6 +193,24 @@ impl Relay {
                 self.release(key); // sin hilo: la conexión se cierra y deja de contar
             }
         }
+    }
+
+    /// Números del relé en JSON (solo cuentas, nada de quién: el relé no guarda registros).
+    pub fn estado(&self) -> String {
+        let st = self.lock();
+        format!(
+            r#"{{"usuarios":{},"conexiones":{},"ips":{},"llamadas":{},"esperando":{},"cartas":{},"cartas_bytes":{},"avisos":{},"reenviado":{},"max":{}}}"#,
+            st.boxes.len(),
+            st.conns.values().sum::<usize>(),
+            st.conns.len(),
+            self.calls.load(Ordering::Relaxed),
+            st.pending.len(),
+            st.letters.values().map(Vec::len).sum::<usize>(),
+            st.letter_bytes,
+            st.push.len(),
+            self.forwarded.load(Ordering::Relaxed),
+            self.max.unwrap_or(MAX_CONNECTIONS),
+        )
     }
 
     fn release(&self, key: IpAddr) {
@@ -409,8 +429,10 @@ impl Relay {
         if let (Ok(a2), Ok(b2)) = (a.try_clone(), b.try_clone())
             && let Ok(x) = hilo(pipe(a, b2, self.forwarded.clone()))
         {
+            self.calls.fetch_add(1, Ordering::Relaxed);
             pipe(b, a2, self.forwarded.clone())();
             let _ = x.join();
+            self.calls.fetch_sub(1, Ordering::Relaxed);
         }
     }
 }
@@ -459,6 +481,15 @@ mod pruebas {
         }
         // Cada carta cuenta su texto y lo que ocupa aparte: el tope llega mucho antes de agotar la memoria.
         assert_eq!(n, super::MAX_LETTER_BYTES / (1 + super::LETTER_OVERHEAD));
+    }
+
+    #[test]
+    fn el_estado_cuenta_sin_decir_quien() {
+        let r = super::Relay::default();
+        r.lock().keep_letter(&"a".repeat(32), "carta").unwrap();
+        let e = r.estado();
+        assert!(e.starts_with('{') && e.ends_with('}'), "{e}");
+        assert!(e.contains(r#""cartas":1"#) && e.contains(r#""usuarios":0"#), "{e}");
     }
 
     #[test]
