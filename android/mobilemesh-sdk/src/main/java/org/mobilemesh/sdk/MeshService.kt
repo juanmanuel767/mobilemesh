@@ -139,29 +139,27 @@ object Silencio {
 
     private fun prefs(c: Context) = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)
 
-    /** Siempre activa (lo eligió el usuario o la app). */
-    fun activo(c: Context) = prefs(c).getBoolean("recepcion_instantanea", false)
+    /** Batería por debajo de la cual (sin cargar) se deja de sonar y se pasa al despertador. */
+    private const val BATERIA_MIN = 15
+
+    /** Encendida por defecto: los avisos llegan al instante, como en cualquier app de mensajería. */
+    fun activo(c: Context) = prefs(c).getBoolean("recepcion_instantanea", true)
 
     fun activar(c: Context, si: Boolean) {
         prefs(c).edit().putBoolean("recepcion_instantanea", si).apply()
         revisar(c)
     }
 
-    /** Automática mientras el teléfono carga (no gasta batería): encendida por defecto. */
-    fun alCargar(c: Context) = prefs(c).getBoolean("recepcion_al_cargar", true)
-
-    fun activarAlCargar(c: Context, si: Boolean) {
-        prefs(c).edit().putBoolean("recepcion_al_cargar", si).apply()
-        revisar(c)
-    }
-
-    /** Enciende o apaga el sonido en silencio según lo elegido y si el teléfono está cargando. */
+    /**
+     * Enciende o apaga el sonido en silencio: encendido si se eligió y hay batería (≥15 % o
+     * cargando). Con poca batería, los avisos siguen llegando por el despertador.
+     */
     @Synchronized
     fun revisar(c: Context) {
         val b = c.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val cargando = (b?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
-        val debe = activo(c) || (alCargar(c) && cargando)
-        if (debe) empezar() else sonando = false
+        val nivel = b?.let { it.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, 0) * 100 / it.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1) } ?: 0
+        if (activo(c) && (cargando || nivel >= BATERIA_MIN)) empezar() else sonando = false
     }
 
     @Synchronized
@@ -373,7 +371,7 @@ object Supernodo {
         val app = c.applicationContext
         hilo = Thread {
             while (true) {
-                // Recepción instantánea: sigue al cargador (enchufar o desenchufar) en menos de un minuto.
+                // Recepción instantánea: sigue a la batería y al cargador en menos de un minuto.
                 Silencio.revisar(app)
                 val toca = permitido(app) && puede(app)
                 when {

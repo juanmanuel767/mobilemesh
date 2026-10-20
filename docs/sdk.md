@@ -127,20 +127,16 @@ minutos, lo recoge, avisa y devuelve el acuse de recibo. No es instantáneo:
 mesh.mirarBuzonCada(3) // minutos (3 por defecto); en reposo profundo Android lo espacia a ~10
 ```
 
-### Recepción instantánea sin Google (opcional)
-
-**Mientras el teléfono carga ya viene encendida** (no gasta batería): con la pantalla apagada los
-mensajes llegan en ~1 s, sin Google. Se apaga sola al desenchufarlo.
+### Avisos al instante sin Google (encendido por defecto)
 
 ```kotlin
-mesh.recepcionInstantaneaAlCargar(false) // encendida por defecto; así se apaga
-mesh.recepcionInstantanea(true)          // siempre, también con batería (gasta más)
+mesh.recepcionInstantanea(false) // encendida por defecto; así se apaga
 ```
 
 Mantiene el sonido abierto en silencio: los fabricantes no congelan una app que suena, así que la
-conexión sigue viva con la pantalla apagada (en un TECNO: mensaje entregado en 1 s con la pantalla
-apagada; sin esta opción, ni el despertador ni los demás permisos lo consiguieron). A cambio, el chip
-de sonido no se duerme.
+conexión sigue viva con la pantalla apagada y los mensajes llegan al instante (en un TECNO: 1 s con la
+pantalla apagada). Con batería por debajo del 15 % (sin cargar) se pausa sola y los avisos llegan
+por el despertador; al cargar vuelve.
 
 ### Avisos al instante con Firebase (opcional)
 

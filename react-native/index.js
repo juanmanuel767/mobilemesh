@@ -102,9 +102,8 @@ export const MobileMesh = {
   /** Ayudar a otros: este móvil hace de relé solo en wifi y con batería ≥15 % (encendido por defecto; `false` lo apaga). */
   hacerDeSupernodo: (activo) => N.hacerDeSupernodo(!!activo),
   esSupernodo: () => N.esSupernodo(),
-  /** Mensajes al instante con la pantalla apagada y sin Google: siempre (gasta batería) o solo al cargar (por defecto). */
+  /** Avisos al instante con la pantalla apagada y sin Google (encendido por defecto; se pausa por debajo del 15 % de batería). */
   recepcionInstantanea: (activa) => N.recepcionInstantanea(!!activa),
-  recepcionInstantaneaAlCargar: (activa) => N.recepcionInstantaneaAlCargar(!!activa),
   diagnostico: () => N.diagnostico(),
 };
 

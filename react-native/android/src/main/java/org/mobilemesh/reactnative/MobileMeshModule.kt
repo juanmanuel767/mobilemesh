@@ -165,8 +165,6 @@ class MobileMeshModule(private val ctx: ReactApplicationContext) : ReactContextB
 
     @ReactMethod fun recepcionInstantanea(activa: Boolean, p: Promise) = trabajar(p) { m().recepcionInstantanea(activa); null }
 
-    @ReactMethod fun recepcionInstantaneaAlCargar(activa: Boolean, p: Promise) = trabajar(p) { m().recepcionInstantaneaAlCargar(activa); null }
-
     @ReactMethod
     fun enviar(contacto: String, texto: String, p: Promise) =
         trabajar(p) { m().nucleo.send(contacto, texto).let { CopiaAutomatica.cambio(ctx); if (it.inMailbox) "en buzón" else "entregado" } }
