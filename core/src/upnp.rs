@@ -16,7 +16,11 @@ const WAIT: Duration = Duration::from_secs(4);
 /// Si `port` ya lo usa otro aparato de la casa, prueba los siguientes. Devuelve el puerto público.
 pub fn open(port: u16, seconds: u32) -> Result<u16> {
     let (control, local) = control()?;
-    for public in port..port.saturating_add(20) {
+    // Algunos routers guardan dos reglas para el mismo puerto (cumplen la primera y, al preguntar
+    // por ese puerto, contestan con la última): se mira la lista entera y se salta cualquier puerto
+    // que apunte a otro aparato, aunque también apunte a este.
+    let de_otros: Vec<u16> = reglas(&control).into_iter().filter(|(_, ip)| *ip != local).map(|(p, _)| p).collect();
+    for public in (port..port.saturating_add(20)).filter(|p| !de_otros.contains(p)) {
         let clave = format!("<NewRemoteHost></NewRemoteHost><NewExternalPort>{public}</NewExternalPort><NewProtocol>TCP</NewProtocol>");
         // Libre, o ya era mío (aunque el router lo tenga a nombre de otra IP mía no se sabe: se salta).
         match soap(&control, "GetSpecificPortMappingEntry", &clave) {
@@ -36,6 +40,18 @@ pub fn open(port: u16, seconds: u32) -> Result<u16> {
         return Ok(public);
     }
     Err("todos los puertos cercanos están ocupados en el router".into())
+}
+
+/// Todas las reglas TCP del router: (puerto público, IP del aparato). Se para en la primera que falte.
+fn reglas(control: &str) -> Vec<(u16, String)> {
+    (0..256).map_while(|i| soap(control, "GetGenericPortMappingEntry", &format!("<NewPortMappingIndex>{i}</NewPortMappingIndex>")).ok()).filter_map(|r| regla(&r)).collect()
+}
+
+/// (puerto público, IP del aparato) de una respuesta del router, si es TCP.
+fn regla(xml: &str) -> Option<(u16, String)> {
+    let campo = |n: &str| xml.split(&format!("<{n}>")).nth(1)?.split('<').next().map(str::trim);
+    (campo("NewProtocol")? == "TCP").then_some(())?;
+    Some((campo("NewExternalPort")?.parse().ok()?, campo("NewInternalClient")?.to_string()))
 }
 
 /// Diagnóstico (solo lee): dirección de control del router y mi IP local.
@@ -110,4 +126,15 @@ fn http(host: &str, method: &str, path: &str, headers: &[&str], body: &str) -> R
         return Err(format!("el router no aceptó {method} {path}").into());
     }
     Ok(resp)
+}
+
+#[cfg(test)]
+mod pruebas {
+    #[test]
+    fn lee_las_reglas_del_router() {
+        let r = "<u:GetGenericPortMappingEntryResponse><NewRemoteHost></NewRemoteHost><NewExternalPort>7841</NewExternalPort>\
+                 <NewProtocol>TCP</NewProtocol><NewInternalPort>7840</NewInternalPort><NewInternalClient>192.168.20.7</NewInternalClient>";
+        assert_eq!(super::regla(r), Some((7841, "192.168.20.7".to_string())));
+        assert_eq!(super::regla(&r.replace("TCP", "UDP")), None);
+    }
 }
