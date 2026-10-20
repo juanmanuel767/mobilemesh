@@ -8,6 +8,22 @@
   <a href="https://github.com/juanmanuel767/mobilemesh/releases/latest"><img src="https://img.shields.io/github/v/release/juanmanuel767/mobilemesh?label=versi%C3%B3n" alt="versión"></a>
   <a href="https://jitpack.io/#juanmanuel767/mobilemesh"><img src="https://jitpack.io/v/juanmanuel767/mobilemesh.svg" alt="JitPack"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT%20%2F%20AGPL-blue" alt="licencia"></a>
+  <a href="https://github.com/juanmanuel767/mobilemesh/stargazers"><img src="https://img.shields.io/github/stars/juanmanuel767/mobilemesh?style=social" alt="estrellas"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/n%C3%BAcleo-Rust-orange?logo=rust" alt="Rust">
+  <img src="https://img.shields.io/badge/Android-Kotlin-3DDC84?logo=android&logoColor=white" alt="Android">
+  <img src="https://img.shields.io/badge/React%20Native-listo-61DAFB?logo=react&logoColor=black" alt="React Native">
+  <img src="https://img.shields.io/badge/Web-WebAssembly-654FF0?logo=webassembly&logoColor=white" alt="Web">
+  <img src="https://img.shields.io/badge/cifrado-de%20extremo%20a%20extremo-success" alt="cifrado">
+</p>
+
+<p align="center">
+  <a href="#-empieza-en-1-minuto"><b>🚀 Empezar</b></a> ·
+  <a href="#-novedad-supernodos"><b>🌐 Supernodos</b></a> ·
+  <a href="#%EF%B8%8F-cómo-funciona"><b>⚙️ Cómo funciona</b></a> ·
+  <a href="docs/comparacion.md"><b>📊 vs Firebase</b></a>
 </p>
 
 ¿Cuántas veces has leído *«se filtraron los datos de millones de usuarios»*? Pasa porque todo se guarda en un mismo servidor en la nube: un solo fallo y se lo llevan todo. MobileMesh funciona al revés:
@@ -22,11 +38,36 @@
 | 📱 **Si pierdes el móvil, no pierdes nada** | Copia cifrada automática: se recupera con usuario y contraseña, o con un código en papel. |
 | 💳 **Pagos** | Cobra con Wompi, Mercado Pago, Stripe o cualquier pasarela en una línea; las claves nunca van dentro de la app. |
 | 💸 **Gratis de verdad** | Sin facturas por usuarios, lecturas o almacenamiento: los datos no ocupan servidores. |
+| 🌐 **Crece con sus usuarios** | Los móviles que lo permiten (en wifi y con batería) ayudan a conectar a los demás: cuantos más usuarios, más capacidad. |
 | 🧑‍💻 **Para programadores** | SDK para Android, React Native y web, y servidor MCP para que una IA cree apps con él. |
 
-Es un proyecto joven. Si te gusta, pruébalo, déjale una ⭐ y cuéntanos qué mejorarías.
+> 💡 Es un proyecto joven. Si te gusta, pruébalo, déjale una ⭐ y cuéntanos qué mejorarías.
 
 📊 **Sin promesas vacías:** [comparación honesta con Firebase, Supabase y SQLite](docs/comparacion.md) (también en qué *no* gana) · [rendimiento medido](docs/rendimiento.md) (repetible con un comando).
+
+## 🌐 Novedad: supernodos
+
+En la mayoría de bases de datos, cuantos más usuarios tienes, más pagas de servidor. En MobileMesh pasa al revés: **los propios usuarios suman capacidad.**
+
+```mermaid
+flowchart LR
+    A["📱 Ana<br/>(datos móviles)"] -->|cifrado| S["🏠 Supernodo<br/>móvil de Pedro en wifi"]
+    S -->|cifrado| B["📱 Juan<br/>(datos móviles)"]
+    A -. "respaldo" .-> R["🛰️ Relé del proyecto"]
+    R -.-> B
+    D["🧭 Director"] -- "«usa a Pedro»" --> A
+    S -- "«puedo ayudar»" --> D
+```
+
+- Un móvil hace de **supernodo** solo si su dueño lo permite, está **en wifi** y tiene **batería ≥15 %** (o carga). Si deja de cumplirse, para solo: su app sigue igual.
+- **No puede leer nada** de lo que pasa por él: todo va cifrado de punta a punta.
+- Si un supernodo se va, las apps pasan al relé del proyecto y eligen otro solas.
+
+```kotlin
+mesh.hacerDeSupernodo(true)   // apagado por defecto: lo decide el usuario
+```
+
+✅ Probado en móviles reales: un mensaje entre dos móviles con datos móviles pasó por un supernodo en casa, sin tocar el relé del proyecto.
 
 ## 🚀 Empieza en 1 minuto
 
@@ -103,15 +144,25 @@ Para probar sin nada más: `python3 mobilemesh/servir.py 8080` y abre `http://12
 
 ## ⚙️ Cómo funciona
 
-```
-📱 Apps Android / React Native ─┐                       ┌─ Guardián: copias cifradas para recuperar la cuenta
-                                ├─► Relés (cifrado E2E) ─┼─ Guía de nombres: usuarios por nombre
-🌐 Apps web ────────────────────┘                       └─ Ayudantes: funciones de servidor (p. ej. pagos)
+```mermaid
+flowchart LR
+    subgraph Usuarios["📱 Apps de tus usuarios"]
+        AN["Android / React Native"]
+        WB["Web"]
+    end
+    AN <-->|"directo (misma red)"| WB
+    AN <-->|cifrado E2E| SN["🌐 Supernodos<br/>(móviles de usuarios)"]
+    AN <-->|cifrado E2E| RL["🛰️ Relés"]
+    WB <-->|cifrado E2E| RL
+    RL --- G["🛡️ Guardián<br/>copias cifradas"]
+    RL --- N["👤 Guía de nombres"]
+    RL --- H["⚡ Ayudantes<br/>(p. ej. pagos)"]
 ```
 
 - Los datos viven **cifrados en cada dispositivo**. Entre dispositivos viajan cifrados de extremo a extremo: directo en la misma red, o por un **relé** que no puede leerlos.
 - El **guardián** guarda copias cifradas que no puede abrir; la copia se actualiza sola tras cada cambio.
-- La **guía de nombres** solo sabe `nombre → dirección` (datos públicos); nadie puede quitarle el nombre a su dueño.
+- La **guía de nombres** solo sabe `nombre → dirección` (datos públicos); nadie puede quitarle el nombre a su dueño, y **cada app tiene sus propios nombres**.
+- Los **supernodos** son móviles de usuarios que ayudan a conectar a otros; un **director** comprueba que se llega a ellos antes de recomendarlos.
 - Los **ayudantes** son funciones de servidor opcionales que saben con certeza qué cuenta los llama: [pagos con cualquier pasarela](examples/ayudante-pagos).
 
 ## ✅ Estado
@@ -126,8 +177,9 @@ Para probar sin nada más: `python3 mobilemesh/servir.py 8080` y abre `http://12
 - Copia automática en el guardián; recuperar la cuenta con contraseña o con código en papel (probado formateando un móvil).
 - Pagos con Wompi (modo de pruebas) con regreso automático a la app.
 - Relé que no puede leer nada, mensajes rellenados a tamaño fijo, bloqueo de contactos, límites contra el spam, rechazo de impostores.
+- Supernodos: un móvil en wifi hace de relé para otros con datos móviles y deja de hacerlo solo al bajar del 15 % de batería.
 
-**Pendiente:** iPhone · usuarios por nombre en la web · más relés, guardianes y guías públicos (hoy dependen de un solo móvil) · liberar nombres abandonados · avisos automáticos de Wompi (webhooks).
+**Pendiente:** iPhone · usuarios por nombre en la web · supernodos en la web · más guardianes y guías públicos (hoy dependen de un solo móvil) · liberar nombres abandonados · avisos automáticos de Wompi (webhooks) · medir el gasto de batería de un supernodo.
 
 ## 🧑‍💻 Para programadores
 
@@ -144,7 +196,7 @@ Para probar sin nada más: `python3 mobilemesh/servir.py 8080` y abre `http://12
 
 ```sh
 cd core
-cargo test --release            # 69 pruebas, entre ellas 8 ataques simulados
+cargo test --release            # 75 pruebas, entre ellas 8 ataques simulados
 cargo build --release
 M=target/release/mesh
 $M /tmp/ana init && $M /tmp/beto init
