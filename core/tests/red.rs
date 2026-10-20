@@ -1495,3 +1495,36 @@ fn cada_app_tiene_sus_propios_nombres_en_la_guia() {
     .unwrap();
     assert_eq!(sols.into_inner(), vec![("pepe".to_string(), inv(&otro_a))]);
 }
+
+#[test]
+fn un_supernodo_empalma_llamadas_y_deja_las_cartas_al_rele() {
+    use mobilemesh_core::{relay, supernodo::Supernodo};
+    use std::io::{Read, Write};
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let sn = l.local_addr().unwrap().to_string();
+    let nodo = Supernodo::arrancar(l).unwrap();
+    // Ana tiene su buzón en el supernodo y contesta con eco.
+    let (r, secreto) = (sn.clone(), "buzon-de-ana".to_string());
+    thread::spawn(move || {
+        relay::listen(r, secreto, |mut s| {
+            let mut b = [0u8; 4];
+            if s.read_exact(&mut b).is_ok() {
+                let _ = s.write_all(&b);
+            }
+        })
+    });
+    let buzon = relay::mailbox_id("buzon-de-ana");
+    let mut s = (0..50)
+        .find_map(|_| relay::dial(&sn, &buzon).ok().or_else(|| { thread::sleep(std::time::Duration::from_millis(100)); None }))
+        .expect("la llamada por el supernodo");
+    s.write_all(b"hola").unwrap();
+    let mut b = [0u8; 4];
+    s.read_exact(&mut b).unwrap();
+    assert_eq!(&b, b"hola");
+    // Las cartas no se guardan en el móvil de otro: van al relé del proyecto.
+    assert!(relay::deposit(&sn, &buzon, "Y2FydGE=").is_err());
+    // Parado, ya no atiende.
+    nodo.parar();
+    thread::sleep(std::time::Duration::from_millis(400));
+    assert!(relay::register(&sn, "otro-buzon").is_err());
+}

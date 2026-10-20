@@ -14,6 +14,8 @@ pub mod relay;
 pub mod replica;
 pub mod store;
 pub mod sync;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod supernodo;
 pub mod transport;
 pub mod upnp;
 /// Reloj: el de std en móvil y PC; en el navegador, el del navegador (std no tiene reloj allí).

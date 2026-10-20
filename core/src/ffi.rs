@@ -23,6 +23,8 @@ static OFFLINE: AtomicBool = AtomicBool::new(false);
 static BACKGROUND: AtomicBool = AtomicBool::new(false);
 /// Mi ruta pública directa si el router de casa abrió el puerto por UPnP.
 static PUBLIC: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+/// El supernodo de este teléfono, si está haciendo de relé para otros.
+static SUPERNODO: std::sync::Mutex<Option<crate::supernodo::Supernodo>> = std::sync::Mutex::new(None);
 
 #[derive(Debug, uniffi::Error)]
 pub enum MeshError {
@@ -778,6 +780,48 @@ impl Mesh {
             format!("Guardo copias de otros: {}", store.held_list()?.len()),
         ];
         Ok(lines.join("\n"))
+    }
+
+    /// Empieza a hacer de relé ligero para otros en `port` (la app decide cuándo: wifi y batería).
+    /// Abre el puerto en el router (UPnP) y se apunta en el director cada minuto. Sin UPnP no se
+    /// le puede llegar desde fuera: el director no lo dará a nadie. `true` si ya estaba o arrancó.
+    pub fn start_supernode(&self, port: u16) -> R<bool> {
+        let mut g = SUPERNODO.lock().unwrap_or_else(|e| e.into_inner());
+        if g.as_ref().is_some_and(|s| s.activo()) {
+            return Ok(true);
+        }
+        let l = TcpListener::bind(("::", port)).or_else(|_| TcpListener::bind(("0.0.0.0", port))).map_err(|e| fail(e.to_string()))?;
+        let nodo = crate::supernodo::Supernodo::arrancar(l)?;
+        let director = crate::directorio::reles(&Store::open(&self.dir, self.me.db_key())?).into_iter().next().ok_or_else(|| fail("no hay relé director"))?;
+        let vivo = nodo.clone();
+        thread::spawn(move || {
+            let mut publico = None;
+            let mut vuelta = 0u32;
+            while vivo.activo() {
+                // El puerto del router caduca a la hora: se renueva cada 30 min.
+                if publico.is_none() || vuelta.is_multiple_of(30) {
+                    publico = crate::upnp::open(port, 3600).ok();
+                }
+                if let Some(p) = publico {
+                    crate::supernodo::apuntarse(&director, p);
+                }
+                vuelta += 1;
+                thread::sleep(Duration::from_secs(60));
+            }
+        });
+        *g = Some(nodo);
+        Ok(true)
+    }
+
+    /// Deja de hacer de relé para otros (las llamadas en curso terminan solas).
+    pub fn stop_supernode(&self) {
+        if let Some(n) = SUPERNODO.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            n.parar();
+        }
+    }
+
+    pub fn is_supernode(&self) -> bool {
+        SUPERNODO.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|s| s.activo())
     }
 
     pub fn set_offline(&self, on: bool) {

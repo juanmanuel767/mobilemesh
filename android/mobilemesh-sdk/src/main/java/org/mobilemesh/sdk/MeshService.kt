@@ -91,6 +91,7 @@ class MeshService : Service() {
         }
         m.startBackground(15u, events)
         Despertador.programar(this)
+        Supernodo.vigilar(this, m)
         started = true
         update("Conectado: recibes mensajes aunque la app esté cerrada")
     }
@@ -306,5 +307,53 @@ class BootReceiver : BroadcastReceiver() {
             MeshService.start(c)
             Despertador.programar(c)
         }
+    }
+}
+
+/**
+ * Supernodo: si el usuario lo permite, el teléfono hace de relé ligero para otros usuarios mientras
+ * está en wifi y con batería (30 % o más, o cargando). Cada minuto se revisa; si deja de cumplirse
+ * (datos móviles, batería baja) para solo, y la app sigue funcionando igual. No puede leer nada de
+ * lo que pasa por él: va cifrado de punta a punta.
+ */
+object Supernodo {
+    /** Un solo supernodo por teléfono: la primera app que lo abre se queda el puerto. */
+    const val PUERTO = 7840
+    private const val BATERIA_MIN = 30
+    private var hilo: Thread? = null
+
+    private fun prefs(c: Context) = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)
+
+    fun permitir(c: Context, si: Boolean) = prefs(c).edit().putBoolean("supernodo", si).apply()
+
+    fun permitido(c: Context) = prefs(c).getBoolean("supernodo", false)
+
+    /** ¿Se cumplen las condiciones ahora? Wifi (sin coste) y batería suficiente o cargando. */
+    fun puede(c: Context): Boolean {
+        val cm = c.getSystemService(android.net.ConnectivityManager::class.java)
+        val red = cm.getNetworkCapabilities(cm.activeNetwork)
+        val wifi = red != null && red.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) &&
+            red.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        val b = c.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val nivel = b?.let { it.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, 0) * 100 / it.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1) } ?: 0
+        val cargando = (b?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        return wifi && (nivel >= BATERIA_MIN || cargando)
+    }
+
+    @Synchronized
+    fun vigilar(c: Context, m: Mesh) {
+        if (hilo != null) return
+        val app = c.applicationContext
+        hilo = Thread {
+            while (true) {
+                val toca = permitido(app) && puede(app)
+                when {
+                    // Si falla (otra app del teléfono ya es supernodo), se reintenta al minuto.
+                    toca && !m.isSupernode() -> runCatching { m.startSupernode(PUERTO.toUShort()) }
+                    !toca && m.isSupernode() -> m.stopSupernode()
+                }
+                Thread.sleep(60_000)
+            }
+        }.apply { isDaemon = true; start() }
     }
 }
