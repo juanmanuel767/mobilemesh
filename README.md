@@ -74,7 +74,7 @@ mesh.hacerDeSupernodo(false)  // encendido por defecto; así se apaga si el usua
 ### React Native (Android)
 
 ```sh
-npm install github:juanmanuel767/mobilemesh#v0.1.7
+npm install github:juanmanuel767/mobilemesh#v0.1.8
 ```
 
 ```js
@@ -98,7 +98,7 @@ En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
 ```kotlin
 dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
 
-dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.7") }
+dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.8") }
 ```
 
 ```kotlin
@@ -173,7 +173,7 @@ flowchart LR
 - Usuarios por nombre y solicitudes de contacto que se aceptan solas.
 - Mensajes cifrados de extremo a extremo (Double Ratchet) en tiempo real; fotos, vídeos y documentos cifrados que continúan tras un corte.
 - Base de datos local cifrada, sincronización entre dispositivos, modo sin conexión, listas compartidas con permisos.
-- Recibir con la app cerrada y avisos sin Google.
+- Recibir con la app cerrada y **avisos al instante sin Google**, también con la pantalla apagada (se pausan solos con batería por debajo del 15 %).
 - Copia automática en el guardián; recuperar la cuenta con contraseña o con código en papel (probado formateando un móvil).
 - Pagos con Wompi (modo de pruebas) con regreso automático a la app.
 - Relé que no puede leer nada, mensajes rellenados a tamaño fijo, bloqueo de contactos, límites contra el spam, rechazo de impostores.

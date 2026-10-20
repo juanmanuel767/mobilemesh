@@ -12,7 +12,7 @@ Ejemplo completo y funcionando: [`examples/notas`](../examples/notas/src/main/ja
 // settings.gradle.kts
 dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
 // build.gradle.kts de tu app
-dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.7") }
+dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.8") }
 ```
 
 Ya compilado, con el núcleo en Rust dentro (teléfonos de 64 bits, `arm64-v8a`). Para compilarlo tú: `android/build.sh`.
