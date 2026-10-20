@@ -367,6 +367,13 @@ impl Mesh {
 
     // ---------- Guía de nombres ----------
 
+    /// Espacio de nombres de esta app en la guía (el SDK pone el paquete de la app): así los
+    /// nombres de una app no chocan con los de otras que usan la misma guía.
+    pub fn set_app(&self, app: String) -> R<()> {
+        let app = crate::nombres::normalize_app(&app)?;
+        Ok(Store::open(&self.dir, self.me.db_key())?.set_setting("app", Some(&app).filter(|a| !a.is_empty()).map(|a| a.as_str()))?)
+    }
+
     /// Elige la guía de nombres (su invitación), o vuelve a la universal con `None`.
     pub fn use_name_guide(&self, invitation: Option<String>) -> R<()> {
         if let Some(i) = &invitation {

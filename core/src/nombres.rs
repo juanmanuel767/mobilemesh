@@ -9,6 +9,10 @@
 //!   pedir sus solicitudes, me añade sola como contacto. Así ana recibe mis mensajes sin que nadie
 //!   tenga que pasar códigos.
 //!
+//! Cada app tiene su propio espacio de nombres («apellido de app»: `com.empresa.app:juan`): «juan»
+//! puede existir una vez en cada app, y las apps que comparten la guía no se quitan los nombres.
+//! Sin app (clientes viejos) se usa el espacio común de antes.
+//!
 //! Solo ve nombres e invitaciones (datos públicos). Mensajes y datos nunca pasan por aquí.
 
 use crate::{
@@ -47,6 +51,28 @@ pub fn normalize(nombre: &str) -> Result<String> {
     if ok { Ok(n) } else { Err("el nombre debe tener de 3 a 30 letras sin tildes, números, «.», «_» o «-»".into()) }
 }
 
+/// Identificador de app normalizado (el paquete de Android, p. ej. `com.empresa.app`); vacío = espacio común.
+pub fn normalize_app(app: &str) -> Result<String> {
+    let a = app.trim().to_lowercase();
+    let ok = a.len() <= 100 && a.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "._-".contains(c));
+    if ok { Ok(a) } else { Err("el identificador de app solo admite letras, números, «.», «_» o «-»".into()) }
+}
+
+/// Dónde se guarda un nombre en la guía. `:` no cabe en nombres ni apps: no se confunden.
+fn id(app: &str, nombre: &str) -> String {
+    if app.is_empty() { nombre.to_string() } else { format!("{app}:{nombre}") }
+}
+
+/// El nombre sin el apellido de app, para mostrarlo.
+fn sin_app(id: &str) -> String {
+    id.split_once(':').map_or(id, |(_, n)| n).to_string()
+}
+
+/// La app de esta cuenta (la pone el SDK al abrirla).
+fn app_de(store: &Store) -> Result<String> {
+    Ok(store.setting("app")?.unwrap_or_default())
+}
+
 fn bad(s: &mut Session, reason: &str) -> Result<()> {
     s.send(&Frame::Bad { id: "nombre".into(), reason: reason.into() })
 }
@@ -59,11 +85,12 @@ fn limite(peer: &str, que: &str) -> bool {
 // ---------- Lado de la guía ----------
 
 /// Registra (o actualiza la invitación de) `nombre` para `peer`.
-pub fn on_put(s: &mut Session, store: &Store, peer: &str, nombre: &str, invitacion: &str) -> Result<()> {
+pub fn on_put(s: &mut Session, store: &Store, peer: &str, app: &str, nombre: &str, invitacion: &str) -> Result<()> {
     if !is_guide(store)? || !limite(peer, "nombre-put") {
         return bad(s, "demasiados intentos; espera un minuto");
     }
-    let Ok(nombre) = normalize(nombre) else { return bad(s, "nombre no válido") };
+    let (Ok(app), Ok(nombre)) = (normalize_app(app), normalize(nombre)) else { return bad(s, "nombre no válido") };
+    let nombre = id(&app, &nombre);
     match crate::parse_invite(invitacion) {
         Ok((key, _)) if key == peer && invitacion.len() <= 600 => {}
         _ => return bad(s, "la invitación no es de tu cuenta"),
@@ -85,24 +112,28 @@ fn invitacion_de(store: &Store, nombre: &str) -> Result<Option<String>> {
     Ok(store.setting(&format!("nombre:{nombre}"))?.and_then(|v| v.split_once('\n').map(|(_, i)| i.to_string())))
 }
 
-pub fn on_get(s: &mut Session, store: &Store, peer: &str, nombre: &str) -> Result<()> {
+pub fn on_get(s: &mut Session, store: &Store, peer: &str, app: &str, nombre: &str) -> Result<()> {
     if !is_guide(store)? || !limite(peer, "nombre-get") {
         return bad(s, "demasiadas búsquedas; espera un minuto");
     }
-    let invitacion = match normalize(nombre) {
-        Ok(n) => invitacion_de(store, &n)?,
-        Err(_) => None,
+    let invitacion = match (normalize_app(app), normalize(nombre)) {
+        (Ok(a), Ok(n)) => invitacion_de(store, &id(&a, &n))?,
+        _ => None,
     };
     s.send(&Frame::Nombre { invitacion })
 }
 
 /// Apunta a `nombre` que `peer` (con su nombre registrado) quiere hablar con él.
-pub fn on_request(s: &mut Session, store: &Store, peer: &str, nombre: &str) -> Result<()> {
+pub fn on_request(s: &mut Session, store: &Store, peer: &str, app: &str, nombre: &str) -> Result<()> {
     if !is_guide(store)? || !limite(peer, "nombre-sol") {
         return bad(s, "demasiadas solicitudes; espera un minuto");
     }
     let Some(yo) = store.setting(&format!("cuenta-nombre:{peer}"))? else { return bad(s, "primero registra tu nombre") };
-    let Some(destino) = normalize(nombre).ok().and_then(|n| store.setting(&format!("nombre:{n}")).ok().flatten()) else {
+    let destino = match (normalize_app(app), normalize(nombre)) {
+        (Ok(a), Ok(n)) => store.setting(&format!("nombre:{}", id(&a, &n)))?,
+        _ => None,
+    };
+    let Some(destino) = destino else {
         return bad(s, "ese nombre no existe");
     };
     let (cuenta_destino, _) = destino.split_once('\n').ok_or("registro dañado")?;
@@ -126,7 +157,7 @@ pub fn on_requests(s: &mut Session, store: &Store, peer: &str) -> Result<()> {
     let mut lista = vec![];
     for n in nombres {
         if let Some(i) = invitacion_de(store, &n)? {
-            lista.push((n, i));
+            lista.push((sin_app(&n), i));
         }
     }
     store.set_setting(&clave, None)?;
@@ -149,7 +180,7 @@ fn hablar(store: &Store, me: &Identity, guia: &str, pedido: Frame) -> Result<Opt
 /// Registra `nombre` con mi invitación en la guía `guia`.
 pub fn register(store: &Store, me: &Identity, guia: &str, nombre: &str, invitacion: &str) -> Result<()> {
     let nombre = normalize(nombre)?;
-    match hablar(store, me, guia, Frame::NombrePut { nombre, invitacion: invitacion.into() })? {
+    match hablar(store, me, guia, Frame::NombrePut { app: app_de(store)?, nombre, invitacion: invitacion.into() })? {
         Some(Frame::Ack { .. }) => Ok(()),
         _ => Err("respuesta inesperada de la guía".into()),
     }
@@ -157,7 +188,7 @@ pub fn register(store: &Store, me: &Identity, guia: &str, nombre: &str, invitaci
 
 /// Invitación de `nombre`, si existe.
 pub fn find(store: &Store, me: &Identity, guia: &str, nombre: &str) -> Result<Option<String>> {
-    match hablar(store, me, guia, Frame::NombreGet { nombre: normalize(nombre)? })? {
+    match hablar(store, me, guia, Frame::NombreGet { app: app_de(store)?, nombre: normalize(nombre)? })? {
         Some(Frame::Nombre { invitacion }) => Ok(invitacion),
         _ => Err("respuesta inesperada de la guía".into()),
     }
@@ -165,7 +196,7 @@ pub fn find(store: &Store, me: &Identity, guia: &str, nombre: &str) -> Result<Op
 
 /// Pide a la guía que avise a `nombre` de que quiero hablar con él.
 pub fn request(store: &Store, me: &Identity, guia: &str, nombre: &str) -> Result<()> {
-    match hablar(store, me, guia, Frame::NombreSolicitar { nombre: normalize(nombre)? })? {
+    match hablar(store, me, guia, Frame::NombreSolicitar { app: app_de(store)?, nombre: normalize(nombre)? })? {
         Some(Frame::Ack { .. }) => Ok(()),
         _ => Err("respuesta inesperada de la guía".into()),
     }

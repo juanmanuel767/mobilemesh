@@ -57,6 +57,11 @@ data class Mensaje(val id: String, val contacto: String, val enviado: Boolean, v
  */
 class MobileMesh private constructor(private val context: Context, val nucleo: Mesh) {
 
+    // Cada app tiene su espacio en la guía de nombres: «juan» de esta app no choca con el de otra.
+    init {
+        envolver { nucleo.setApp(context.packageName) }
+    }
+
     companion object {
         private val ui = Handler(Looper.getMainLooper())
 

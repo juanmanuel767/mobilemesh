@@ -308,9 +308,9 @@ pub fn serve(store: &Store, me: &Identity, stream: impl net::Conn + 'static) -> 
             Frame::ReplicaDel => replica::on_delete(&mut s, store, &peer)?,
             Frame::CuentaPut { id, code } => guardian::on_put(&mut s, store, &peer, &id, &code)?,
             Frame::CuentaGet { id } => guardian::on_get(&mut s, store, &peer, &id)?,
-            Frame::NombrePut { nombre, invitacion } => nombres::on_put(&mut s, store, &peer, &nombre, &invitacion)?,
-            Frame::NombreGet { nombre } => nombres::on_get(&mut s, store, &peer, &nombre)?,
-            Frame::NombreSolicitar { nombre } => nombres::on_request(&mut s, store, &peer, &nombre)?,
+            Frame::NombrePut { app, nombre, invitacion } => nombres::on_put(&mut s, store, &peer, &app, &nombre, &invitacion)?,
+            Frame::NombreGet { app, nombre } => nombres::on_get(&mut s, store, &peer, &app, &nombre)?,
+            Frame::NombreSolicitar { app, nombre } => nombres::on_request(&mut s, store, &peer, &app, &nombre)?,
             Frame::NombreSolicitudes => nombres::on_requests(&mut s, store, &peer)?,
             Frame::Chunk { id, .. } if rejected.as_ref() == Some(&id) => {}
             Frame::Chunk { id, index, data } => {

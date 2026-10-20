@@ -142,10 +142,24 @@ pub enum Frame {
     Cuenta { code: Option<String> },
     /// Guía de nombres: «registra mi nombre» / «¿invitación de este nombre?» / respuesta /
     /// «avisa a este nombre de que quiero hablar con él» / «¿quién quiere hablar conmigo?» / lista.
-    NombrePut { nombre: String, invitacion: String },
-    NombreGet { nombre: String },
+    /// `app`: el espacio de nombres de cada app (vacío = el común, el de los clientes viejos).
+    NombrePut {
+        #[serde(default)]
+        app: String,
+        nombre: String,
+        invitacion: String,
+    },
+    NombreGet {
+        #[serde(default)]
+        app: String,
+        nombre: String,
+    },
     Nombre { invitacion: Option<String> },
-    NombreSolicitar { nombre: String },
+    NombreSolicitar {
+        #[serde(default)]
+        app: String,
+        nombre: String,
+    },
     NombreSolicitudes,
     Solicitudes { lista: Vec<(String, String)> },
 }

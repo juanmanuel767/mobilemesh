@@ -1440,3 +1440,58 @@ fn ruta_suplantada_no_bloquea_la_siguiente() {
     let s = Session::connect(&ruta, &yo, &from_hex(&bueno.id()).unwrap()).expect("debió ganar la segunda ruta");
     assert_eq!(s.peer, from_hex(&bueno.id()).unwrap());
 }
+
+#[test]
+fn cada_app_tiene_sus_propios_nombres_en_la_guia() {
+    use mobilemesh_core::nombres;
+    let g = device("guia-apps");
+    nombres::enable(&st(&g.0)).unwrap();
+    // Una operación de la guía = una conexión.
+    let guia = |op: &dyn Fn(&str) -> Result<(), String>| {
+        let (addr, h) = listen_once(g.0.clone());
+        let r = op(&format!("mobilemesh:2:{}:{addr}", g.1.id()));
+        let _ = h.join();
+        r
+    };
+    let cuenta = |n: &str, app: &str| {
+        let d = device(n);
+        if !app.is_empty() {
+            st(&d.0).set_setting("app", Some(app)).unwrap();
+        }
+        d
+    };
+    let inv = |d: &(PathBuf, Identity)| format!("mobilemesh:2:{}:127.0.0.1:1", d.1.id());
+    let registrar = |d: &(PathBuf, Identity), n: &str| guia(&|g| nombres::register(&st(&d.0), &d.1, g, n, &inv(d)).map_err(|e| e.to_string()));
+    let buscar = |d: &(PathBuf, Identity), n: &str| {
+        let out = std::cell::RefCell::new(None);
+        guia(&|g| {
+            *out.borrow_mut() = nombres::find(&st(&d.0), &d.1, g, n).unwrap();
+            Ok(())
+        })
+        .unwrap();
+        out.into_inner()
+    };
+
+    let (juan_a, juan_b, juan_viejo) = (cuenta("juan-a", "com.app.a"), cuenta("juan-b", "com.app.b"), cuenta("juan-viejo", ""));
+    // «juan» existe una vez en cada app, y en el espacio común de los clientes viejos.
+    registrar(&juan_a, "juan").unwrap();
+    registrar(&juan_b, "juan").unwrap();
+    registrar(&juan_viejo, "juan").unwrap();
+    assert_eq!(buscar(&juan_a, "juan"), Some(inv(&juan_a)));
+    assert_eq!(buscar(&juan_b, "juan"), Some(inv(&juan_b)));
+    assert_eq!(buscar(&juan_viejo, "juan"), Some(inv(&juan_viejo)));
+    // Dentro de la misma app el nombre sigue siendo del primero.
+    let otro_a = cuenta("otro-a", "com.app.a");
+    assert!(registrar(&otro_a, "juan").unwrap_err().contains("ya lo usa"));
+
+    // Las solicitudes llegan dentro de la app y con el nombre sin apellido.
+    registrar(&otro_a, "pepe").unwrap();
+    guia(&|g| nombres::request(&st(&otro_a.0), &otro_a.1, g, "juan").map_err(|e| e.to_string())).unwrap();
+    let sols = std::cell::RefCell::new(vec![]);
+    guia(&|g| {
+        *sols.borrow_mut() = nombres::requests(&st(&juan_a.0), &juan_a.1, g).unwrap();
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(sols.into_inner(), vec![("pepe".to_string(), inv(&otro_a))]);
+}
