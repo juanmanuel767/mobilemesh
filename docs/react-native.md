@@ -5,7 +5,7 @@ Base de datos, cuentas por nombre de usuario, mensajes, archivos y avisos, sin s
 ## 1. Instalar (un comando)
 
 ```sh
-npm install github:juanmanuel767/mobilemesh#v0.1.9
+npm install github:juanmanuel767/mobilemesh#v0.1.10
 ```
 
 En `android/build.gradle` de tu app: `minSdkVersion = 28`. Recompila la app (`npx react-native run-android`).
