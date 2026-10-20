@@ -44,6 +44,15 @@ const LINE_DEADLINE: Duration = Duration::from_secs(30);
 /// Pila de cada hilo: la de serie (2 MB) sobra para leer y copiar bytes.
 const STACK: usize = 256 * 1024;
 
+/// Supernodos (móviles de usuarios que hacen de relé): salen de la lista si no se vuelven a apuntar
+/// en este tiempo (se apuntan cada minuto).
+const SUPERNODO_VIVO: Duration = Duration::from_secs(180);
+/// Como mucho tantos por IP (una casa con varios móviles) y en total.
+const SUPERNODOS_POR_IP: usize = 4;
+const MAX_SUPERNODOS: usize = 10_000;
+/// Cuántos se dan a quien pregunta (los más recientes).
+const SUPERNODOS_DADOS: usize = 50;
+
 /// Un hilo con la pila pequeña. Si el sistema no da más hilos, devuelve el error: se rechaza esa
 /// conexión en vez de caerse el relé entero (`thread::spawn` aborta en ese caso).
 fn hilo<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> std::io::Result<thread::JoinHandle<T>> {
@@ -67,6 +76,8 @@ struct State {
     last_purge: Option<Instant>,
     /// buzón → (ficha de avisos, último aviso)
     push: HashMap<String, (String, Option<std::time::Instant>)>,
+    /// supernodo «ip:puerto» → cuándo se comprobó que se llega a él desde fuera
+    supernodos: HashMap<String, Instant>,
 }
 
 impl State {
@@ -195,11 +206,31 @@ impl Relay {
         }
     }
 
+    /// Apunta el supernodo `ip:puerto` si contesta a QUIEN como un relé. Devuelve si quedó apuntado.
+    fn add_supernode(&self, ip: IpAddr, puerto: u16) -> bool {
+        let addr = std::net::SocketAddr::new(ip, puerto);
+        let contesta = TcpStream::connect_timeout(&addr, WAIT).is_ok_and(|mut c| {
+            writeln!(c, "QUIEN").is_ok() && read_line(&mut Deadline(&c, Instant::now() + WAIT)).is_ok_and(|l| l.parse::<IpAddr>().is_ok())
+        });
+        if !contesta {
+            return false;
+        }
+        let mut st = self.lock();
+        st.supernodos.retain(|_, t| t.elapsed() < SUPERNODO_VIVO);
+        let clave = addr.to_string();
+        let de_esa_ip = st.supernodos.keys().filter(|k| k.parse::<std::net::SocketAddr>().is_ok_and(|a| a.ip() == ip) && **k != clave).count();
+        if !st.supernodos.contains_key(&clave) && (de_esa_ip >= SUPERNODOS_POR_IP || st.supernodos.len() >= MAX_SUPERNODOS) {
+            return false;
+        }
+        st.supernodos.insert(clave, Instant::now());
+        true
+    }
+
     /// Números del relé en JSON (solo cuentas, nada de quién: el relé no guarda registros).
     pub fn estado(&self) -> String {
         let st = self.lock();
         format!(
-            r#"{{"usuarios":{},"conexiones":{},"ips":{},"llamadas":{},"esperando":{},"cartas":{},"cartas_bytes":{},"avisos":{},"reenviado":{},"max":{}}}"#,
+            r#"{{"usuarios":{},"conexiones":{},"ips":{},"llamadas":{},"esperando":{},"cartas":{},"cartas_bytes":{},"avisos":{},"reenviado":{},"max":{},"supernodos":{}}}"#,
             st.boxes.len(),
             st.conns.values().sum::<usize>(),
             st.conns.len(),
@@ -210,6 +241,7 @@ impl Relay {
             st.push.len(),
             self.forwarded.load(Ordering::Relaxed),
             self.max.unwrap_or(MAX_CONNECTIONS),
+            st.supernodos.values().filter(|t| t.elapsed() < SUPERNODO_VIVO).count(),
         )
     }
 
@@ -238,6 +270,26 @@ impl Relay {
             // Como STUN: «¿con qué IP me ves?» (la pública de mi router o de mi operadora).
             "QUIEN" => {
                 writeln!(s, "{ip}")?;
+                Ok(())
+            }
+            // Director: un dispositivo se ofrece como relé en <puerto> de SU IP (nunca la de otro),
+            // y solo entra si desde aquí se le llega y contesta como un relé.
+            "SUPERNODO" => {
+                let publica = match ip {
+                    IpAddr::V4(v4) => !(v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_unspecified()),
+                    IpAddr::V6(v6) => !(v6.is_loopback() || v6.is_unspecified() || v6.to_ipv4_mapped().is_some()),
+                };
+                let ok = publica && arg.parse::<u16>().is_ok_and(|p| p > 0 && self.add_supernode(ip, p));
+                writeln!(s, "{}", if ok { "OK" } else { "NO" })?;
+                Ok(())
+            }
+            "SUPERNODOS" => {
+                let mut st = self.lock();
+                st.supernodos.retain(|_, t| t.elapsed() < SUPERNODO_VIVO);
+                let mut lista: Vec<(&String, &Instant)> = st.supernodos.iter().collect();
+                lista.sort_by_key(|(_, t)| std::cmp::Reverse(**t));
+                let lista: Vec<&str> = lista.iter().take(SUPERNODOS_DADOS).map(|(a, _)| a.as_str()).collect();
+                writeln!(s, "{}", lista.join(","))?;
                 Ok(())
             }
             "DIRECTORIO" => {
@@ -490,6 +542,23 @@ mod pruebas {
         let e = r.estado();
         assert!(e.starts_with('{') && e.ends_with('}'), "{e}");
         assert!(e.contains(r#""cartas":1"#) && e.contains(r#""usuarios":0"#), "{e}");
+    }
+
+    #[test]
+    fn el_director_solo_apunta_supernodos_que_contestan() {
+        use std::net::TcpListener;
+        // Un relé de verdad en un puerto libre: contesta a QUIEN.
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let puerto = l.local_addr().unwrap().port();
+        std::thread::spawn(move || super::Relay::default().serve(l));
+        let director = super::Relay::default();
+        let ip: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(director.add_supernode(ip, puerto));
+        // Un puerto donde nadie contesta como relé: no entra.
+        let mudo = TcpListener::bind("127.0.0.1:0").unwrap();
+        assert!(!director.add_supernode(ip, mudo.local_addr().unwrap().port()));
+        assert_eq!(director.lock().supernodos.len(), 1);
+        assert!(director.estado().contains(r#""supernodos":1"#));
     }
 
     #[test]
