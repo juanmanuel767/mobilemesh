@@ -68,7 +68,7 @@ class MeshService : Service() {
         if (Build.VERSION.SDK_INT >= 34) startForeground(ONGOING, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
         else startForeground(ONGOING, n)
         // Recepción instantánea (opcional): con audio en silencio el fabricante no congela la app.
-        if (Silencio.activo(this)) Silencio.empezar()
+        Silencio.revisar(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -135,15 +135,38 @@ class MeshService : Service() {
  */
 object Silencio {
     private var hilo: Thread? = null
+    @Volatile private var sonando = false
 
-    fun activo(c: Context) = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE).getBoolean("recepcion_instantanea", false)
+    private fun prefs(c: Context) = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)
+
+    /** Siempre activa (lo eligió el usuario o la app). */
+    fun activo(c: Context) = prefs(c).getBoolean("recepcion_instantanea", false)
 
     fun activar(c: Context, si: Boolean) {
-        c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE).edit().putBoolean("recepcion_instantanea", si).apply()
-        if (si) empezar() // ponytail: desactivar surte efecto al reiniciar la app
+        prefs(c).edit().putBoolean("recepcion_instantanea", si).apply()
+        revisar(c)
     }
 
+    /** Automática mientras el teléfono carga (no gasta batería): encendida por defecto. */
+    fun alCargar(c: Context) = prefs(c).getBoolean("recepcion_al_cargar", true)
+
+    fun activarAlCargar(c: Context, si: Boolean) {
+        prefs(c).edit().putBoolean("recepcion_al_cargar", si).apply()
+        revisar(c)
+    }
+
+    /** Enciende o apaga el sonido en silencio según lo elegido y si el teléfono está cargando. */
+    @Synchronized
+    fun revisar(c: Context) {
+        val b = c.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val cargando = (b?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        val debe = activo(c) || (alCargar(c) && cargando)
+        if (debe) empezar() else sonando = false
+    }
+
+    @Synchronized
     fun empezar() {
+        sonando = true
         if (hilo != null) return
         hilo = Thread {
             val tam = android.media.AudioTrack.getMinBufferSize(8000, android.media.AudioFormat.CHANNEL_OUT_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT)
@@ -154,7 +177,10 @@ object Silencio {
                 .build()
             val ceros = ShortArray(tam)
             pista.play()
-            while (true) pista.write(ceros, 0, ceros.size)
+            while (sonando) pista.write(ceros, 0, ceros.size)
+            pista.stop()
+            pista.release()
+            synchronized(this) { hilo = null }
         }.apply { isDaemon = true; start() }
     }
 }
@@ -347,6 +373,8 @@ object Supernodo {
         val app = c.applicationContext
         hilo = Thread {
             while (true) {
+                // Recepción instantánea: sigue al cargador (enchufar o desenchufar) en menos de un minuto.
+                Silencio.revisar(app)
                 val toca = permitido(app) && puede(app)
                 when {
                     // Si falla (otra app del teléfono ya es supernodo), se reintenta al minuto.

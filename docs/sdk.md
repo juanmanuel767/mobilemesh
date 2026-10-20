@@ -129,8 +129,12 @@ mesh.mirarBuzonCada(3) // minutos (3 por defecto); en reposo profundo Android lo
 
 ### Recepción instantánea sin Google (opcional)
 
+**Mientras el teléfono carga ya viene encendida** (no gasta batería): con la pantalla apagada los
+mensajes llegan en ~1 s, sin Google. Se apaga sola al desenchufarlo.
+
 ```kotlin
-mesh.recepcionInstantanea(true) // mejor que lo active el usuario: gasta más batería
+mesh.recepcionInstantaneaAlCargar(false) // encendida por defecto; así se apaga
+mesh.recepcionInstantanea(true)          // siempre, también con batería (gasta más)
 ```
 
 Mantiene el sonido abierto en silencio: los fabricantes no congelan una app que suena, así que la

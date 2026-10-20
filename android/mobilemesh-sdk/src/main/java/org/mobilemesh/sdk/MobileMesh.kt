@@ -287,9 +287,15 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
     /**
      * Recepción instantánea sin Google, también con la pantalla apagada en teléfonos que congelan las
      * apps (TECNO, ZTE…). Gasta más batería (mantiene el sonido abierto, en silencio): mejor que la
-     * active el usuario. Desactivarla surte efecto al reiniciar la app.
+     * active el usuario. Desactivarla surte efecto en menos de un minuto.
      */
     fun recepcionInstantanea(activa: Boolean) = Silencio.activar(context, activa)
+
+    /**
+     * Recepción instantánea solo mientras el teléfono carga (sin gastar batería): mensajes en ~1 s
+     * con la pantalla apagada, sin Google. Encendida por defecto; `false` la apaga.
+     */
+    fun recepcionInstantaneaAlCargar(activa: Boolean) = Silencio.activarAlCargar(context, activa)
 
     /** Resumen del estado para depurar (sin datos privados). */
     fun diagnostico(): String = envolver { nucleo.diagnostics() }
