@@ -352,6 +352,8 @@ object Supernodo {
                     toca && !m.isSupernode() -> runCatching { m.startSupernode(PUERTO.toUShort()) }
                     !toca && m.isSupernode() -> m.stopSupernode()
                 }
+                // Para el desarrollador (adb logcat -s MobileMesh): qué ha pasado por este supernodo.
+                m.supernodeSummary()?.let { android.util.Log.i("MobileMesh", "Supernodo: $it") }
                 Thread.sleep(60_000)
             }
         }.apply { isDaemon = true; start() }

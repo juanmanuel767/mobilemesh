@@ -1521,6 +1521,9 @@ fn un_supernodo_empalma_llamadas_y_deja_las_cartas_al_rele() {
     let mut b = [0u8; 4];
     s.read_exact(&mut b).unwrap();
     assert_eq!(&b, b"hola");
+    drop(s);
+    thread::sleep(std::time::Duration::from_millis(300));
+    assert!(nodo.resumen().contains("1 llamadas"), "{}", nodo.resumen());
     // Las cartas no se guardan en el móvil de otro: van al relé del proyecto.
     assert!(relay::deposit(&sn, &buzon, "Y2FydGE=").is_err());
     // Parado, ya no atiende.

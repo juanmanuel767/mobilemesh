@@ -792,6 +792,7 @@ impl Mesh {
             format!("Cambios sin confirmar por mis dispositivos: {}", sync::unsynced(&store, &identity::to_hex(&self.me.public))?),
             format!("Guardan mi copia: {}", store.holders()?.len()),
             format!("Guardo copias de otros: {}", store.held_list()?.len()),
+            format!("Supernodo: {}", self.supernode_summary().unwrap_or_else(|| "no".into())),
         ];
         Ok(lines.join("\n"))
     }
@@ -832,6 +833,11 @@ impl Mesh {
         if let Some(n) = SUPERNODO.lock().unwrap_or_else(|e| e.into_inner()).take() {
             n.parar();
         }
+    }
+
+    /// Qué ha hecho el supernodo desde que arrancó, o `None` si no lo es.
+    pub fn supernode_summary(&self) -> Option<String> {
+        SUPERNODO.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|s| s.activo()).map(|s| s.resumen())
     }
 
     pub fn is_supernode(&self) -> bool {

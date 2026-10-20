@@ -18,7 +18,7 @@ use std::{
     net::{IpAddr, Shutdown, TcpListener, TcpStream},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
     time::Duration,
@@ -47,13 +47,16 @@ struct Estado {
 pub struct Supernodo {
     estado: Arc<Mutex<Estado>>,
     activo: Arc<AtomicBool>,
+    /// Llamadas empalmadas y bytes reenviados desde que arrancó (solo cuentas, nada de quién).
+    llamadas: Arc<AtomicU64>,
+    bytes: Arc<AtomicU64>,
 }
 
 impl Supernodo {
     /// Atiende en `l` hasta que se pare.
     pub fn arrancar(l: TcpListener) -> Result<Supernodo> {
         l.set_nonblocking(true)?;
-        let sn = Supernodo { estado: Arc::default(), activo: Arc::new(AtomicBool::new(true)) };
+        let sn = Supernodo { estado: Arc::default(), activo: Arc::new(AtomicBool::new(true)), llamadas: Arc::default(), bytes: Arc::default() };
         let yo = sn.clone();
         thread::spawn(move || {
             while yo.activo.load(Ordering::SeqCst) {
@@ -77,6 +80,16 @@ impl Supernodo {
 
     pub fn activo(&self) -> bool {
         self.activo.load(Ordering::SeqCst)
+    }
+
+    /// «N buzones · N llamadas · N KB reenviados».
+    pub fn resumen(&self) -> String {
+        format!(
+            "{} buzones · {} llamadas · {} KB reenviados",
+            self.lock().buzones.len(),
+            self.llamadas.load(Ordering::Relaxed),
+            self.bytes.load(Ordering::Relaxed) / 1024
+        )
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Estado> {
@@ -120,7 +133,8 @@ impl Supernodo {
                 let quien = self.lock().esperando.remove(arg);
                 if let Some(mut quien) = quien {
                     writeln!(quien, "OK")?;
-                    empalmar(quien, s);
+                    self.llamadas.fetch_add(1, Ordering::Relaxed);
+                    empalmar(quien, s, &self.bytes);
                 }
             }
             // Cartas, avisos y directorio: los da el relé del proyecto.
@@ -184,21 +198,23 @@ impl Supernodo {
 }
 
 /// Copia en los dos sentidos hasta que uno cierre o pase `QUIETA` sin tráfico.
-fn empalmar(a: TcpStream, b: TcpStream) {
-    let tubo = |mut de: TcpStream, mut a: TcpStream| {
+fn empalmar(a: TcpStream, b: TcpStream, bytes: &Arc<AtomicU64>) {
+    let tubo = |mut de: TcpStream, mut a: TcpStream, bytes: Arc<AtomicU64>| {
         let _ = de.set_read_timeout(Some(QUIETA));
         let mut buf = [0u8; 16 * 1024];
         while let Ok(n @ 1..) = de.read(&mut buf) {
             if a.write_all(&buf[..n]).is_err() {
                 break;
             }
+            bytes.fetch_add(n as u64, Ordering::Relaxed);
         }
         let _ = a.shutdown(Shutdown::Both);
         let _ = de.shutdown(Shutdown::Both);
     };
     if let (Ok(a2), Ok(b2)) = (a.try_clone(), b.try_clone()) {
-        let otro = thread::spawn(move || tubo(a, b2));
-        tubo(b, a2);
+        let b3 = bytes.clone();
+        let otro = thread::spawn(move || tubo(a, b2, b3));
+        tubo(b, a2, bytes.clone());
         let _ = otro.join();
     }
 }
