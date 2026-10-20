@@ -41,6 +41,9 @@ private const val PUERTO_GUARDIAN = 7954
 /** Guía de nombres (pieza aparte: usuarios por nombre, como en cualquier base de datos). */
 private const val PUERTO_NOMBRES = 7955
 
+/** Colecciones públicas (pieza aparte: lo que las apps publican para todos, como un ranking). */
+private const val PUERTO_PUBLICO = 7956
+
 /** Relés universales a los que preguntar «¿con qué IP me ves?» para saber mi IP pública. */
 private val RELES_QUIEN = listOf("mobilemeshjuan.duckdns.org" to 7900)
 
@@ -63,7 +66,7 @@ class ReleService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("rele", "Relé", NotificationManager.IMPORTANCE_LOW))
         val n = Notification.Builder(this, "rele").setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("Relé de MobileMesh en marcha").setContentText("Relé 7900 · Web 7901 · Guardián 7954 · Nombres 7955").setOngoing(true).build()
+            .setContentTitle("Relé de MobileMesh en marcha").setContentText("Relé 7900 · Web 7901 · Guardián 7954 · Nombres 7955 · Público 7956").setOngoing(true).build()
         startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         // Sin estos dos, con la pantalla apagada Android duerme la CPU y la wifi.
         getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "rele:cpu").acquire()
@@ -98,6 +101,13 @@ class ReleService : Service() {
                 vigilar("guía de nombres", listOf(mesh, dirNombres, "nombres", "0.0.0.0:$PUERTO_NOMBRES", rutaPublica(PUERTO_NOMBRES)), nombres)
             }
             hilo { puerto(PUERTO_NOMBRES, nombres) }
+            val publico = File(filesDir, "publico.log")
+            val dirPublico = File(filesDir, "publico").path
+            hilo {
+                runCatching { ProcessBuilder(mesh, dirPublico, "init").redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.appendTo(publico)).start().waitFor() }
+                vigilar("colecciones públicas", listOf(mesh, dirPublico, "publico", "0.0.0.0:$PUERTO_PUBLICO", rutaPublica(PUERTO_PUBLICO)), publico)
+            }
+            hilo { puerto(PUERTO_PUBLICO, publico) }
             hilo { duckdns(rele) }
         }
         return START_STICKY

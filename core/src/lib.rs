@@ -9,6 +9,7 @@ pub mod guardian;
 pub mod identity;
 pub mod net;
 pub mod nombres;
+pub mod publico;
 pub mod recovery;
 pub mod relay;
 pub mod replica;
@@ -232,12 +233,16 @@ pub fn serve(store: &Store, me: &Identity, stream: impl net::Conn + 'static) -> 
     // archivos de desconocidos llenarían su disco (auditoría de las piezas nuevas).
     let solo_guardian = guardian::is_guardian(store)?;
     let solo_nombres = nombres::is_guide(store)?;
+    let solo_publico = publico::is_public(store)?;
     while let Some(frame) = s.recv()? {
         if solo_guardian && !guardian::allowed(&frame) {
             return Err("un guardián solo guarda copias y códigos de cuenta".into());
         }
         if solo_nombres && !nombres::allowed(&frame) {
             return Err("una guía de nombres solo atiende nombres".into());
+        }
+        if solo_publico && !publico::allowed(&frame) {
+            return Err("una pieza pública solo atiende colecciones públicas".into());
         }
         match frame {
             Frame::KeysReq => {
@@ -314,6 +319,11 @@ pub fn serve(store: &Store, me: &Identity, stream: impl net::Conn + 'static) -> 
             Frame::NombreGet { app, nombre } => nombres::on_get(&mut s, store, &peer, &app, &nombre)?,
             Frame::NombreSolicitar { app, nombre } => nombres::on_request(&mut s, store, &peer, &app, &nombre)?,
             Frame::NombreSolicitudes => nombres::on_requests(&mut s, store, &peer)?,
+            Frame::PublicoPut { app, coleccion, id, campos } => publico::on_put(&mut s, store, &peer, &app, &coleccion, &id, &campos)?,
+            Frame::PublicoBorrar { app, coleccion, id } => publico::on_delete(&mut s, store, &peer, &app, &coleccion, &id)?,
+            Frame::PublicoConsulta { app, coleccion, filtros, orden, desc, limite } => {
+                publico::on_query(&mut s, store, &peer, &app, &coleccion, &filtros, orden.as_deref(), desc, limite)?
+            }
             Frame::Chunk { id, .. } if rejected.as_ref() == Some(&id) => {}
             Frame::Chunk { id, index, data } => {
                 let Some((fid, meta, part)) = &incoming else { return Err("trozo de archivo inesperado".into()) };

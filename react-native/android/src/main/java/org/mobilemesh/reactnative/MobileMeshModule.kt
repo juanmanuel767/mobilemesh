@@ -274,6 +274,28 @@ class MobileMeshModule(private val ctx: ReactApplicationContext) : ReactContextB
     @ReactMethod
     fun borrar(coleccion: String, id: String, p: Promise) = trabajar(p) { m().coleccion(coleccion).borrar(id); null }
 
+    // ---------- Colecciones públicas (lo que la app publica para todos) ----------
+
+    @ReactMethod
+    fun publicar(coleccion: String, id: String, campos: ReadableMap, p: Promise) =
+        trabajar(p) { m().nucleo.publish(coleccion, id, JSONObject(campos.toHashMap()).toString()); null }
+
+    @ReactMethod
+    fun borrarPublicado(coleccion: String, id: String, p: Promise) = trabajar(p) { m().nucleo.unpublish(coleccion, id); null }
+
+    /** `opcionesJson`: {donde: [[campo, operador, valor]], orden, desc, limite}. */
+    @ReactMethod
+    fun consultarPublico(coleccion: String, opcionesJson: String, p: Promise) = trabajar(p) {
+        val o = JSONObject(opcionesJson)
+        val donde = o.optJSONArray("donde") ?: JSONArray()
+        val filtros = (0 until donde.length()).map { i ->
+            val f = donde.getJSONArray(i)
+            uniffi.mobilemesh_core.PublicFilter(f.getString(0), f.getString(1), JSONArray().put(f.opt(2) ?: JSONObject.NULL).toString().removeSurrounding("[", "]"))
+        }
+        val docs = m().nucleo.publicQuery(coleccion, filtros, o.optString("orden").ifEmpty { null }, o.optBoolean("desc"), o.optInt("limite", 50).coerceIn(1, 100).toUInt())
+        JSONArray(docs.map { JSONObject().put("id", it.id).put("autor", it.author).put("campos", JSONObject(it.fields)) }).toString()
+    }
+
     // Necesarios para NativeEventEmitter.
     @ReactMethod fun addListener(evento: String) {}
 

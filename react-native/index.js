@@ -98,6 +98,11 @@ export const MobileMesh = {
   guardar: (coleccion, id, campos) => N.guardar(coleccion, id, campos),
   datos: async (coleccion) => JSON.parse(await N.datos(coleccion)),
   borrar: (coleccion, id) => N.borrar(coleccion, id),
+  /** Colecciones públicas: lo que la app publica a propósito para que lo vean todos (ranking, catálogo). */
+  publicar: (coleccion, id, campos) => N.publicar(coleccion, id, campos),
+  borrarPublicado: (coleccion, id) => N.borrarPublicado(coleccion, id),
+  /** opciones: { donde: [["puntos", ">", 100]], orden: "puntos", desc: true, limite: 10 } */
+  consultarPublico: async (coleccion, opciones = {}) => JSON.parse(await N.consultarPublico(coleccion, JSON.stringify(opciones))),
   usarRele: (direccion) => N.usarRele(direccion ?? null),
   /** Ayudar a otros: este móvil hace de relé solo en wifi y con batería ≥15 % (encendido por defecto; `false` lo apaga). */
   hacerDeSupernodo: (activo) => N.hacerDeSupernodo(!!activo),

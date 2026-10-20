@@ -38,6 +38,7 @@
 | 📱 **Si pierdes el móvil, no pierdes nada** | Copia cifrada automática: se recupera con usuario y contraseña, o con un código en papel. |
 | 💳 **Pagos** | Cobra con Wompi, Mercado Pago, Stripe o cualquier pasarela en una línea; las claves nunca van dentro de la app. |
 | 💸 **Gratis de verdad** | Sin facturas por usuarios, lecturas o almacenamiento: los datos no ocupan servidores. |
+| 🏆 **Colecciones públicas** | Lo que la app quiere que vean todos (rankings, catálogos, tablones) en una línea; el resto sigue privado. |
 | 🌐 **Crece con sus usuarios** | Los móviles que lo permiten (en wifi y con batería) ayudan a conectar a los demás: cuantos más usuarios, más capacidad. |
 | 🧑‍💻 **Para programadores** | SDK para Android, React Native y web, y servidor MCP para que una IA cree apps con él. |
 

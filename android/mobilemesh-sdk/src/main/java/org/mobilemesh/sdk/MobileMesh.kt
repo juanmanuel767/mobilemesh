@@ -14,6 +14,7 @@ import org.json.JSONObject
 import uniffi.mobilemesh_core.IdentityState
 import uniffi.mobilemesh_core.Mesh
 import uniffi.mobilemesh_core.MeshException
+import uniffi.mobilemesh_core.PublicFilter
 import uniffi.mobilemesh_core.QueryFilter
 import uniffi.mobilemesh_core.SyncRecord
 import uniffi.mobilemesh_core.identityState
@@ -35,6 +36,9 @@ enum class EstadoCuenta {
 
 /** Un documento de una colección. `conflictos`: valores en disputa de las colecciones estrictas. */
 data class Documento(val id: String, val campos: Map<String, Any?>, val conflictos: Map<String, List<Any?>>)
+
+/** Documento de una colección pública: `autor` es la cuenta que lo publicó (verificada). */
+data class DocumentoPublico(val id: String, val autor: String, val campos: Map<String, Any?>)
 
 /** Resultado de un envío: cuántos mensajes y si quedaron en el buzón del destinatario dormido. */
 data class Envio(val cuantos: Int, val enBuzon: Boolean)
@@ -148,6 +152,16 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
     internal val contexto: Context get() = context
 
     fun coleccion(nombre: String, estricta: Boolean = false) = Coleccion(this, nombre, estricta)
+
+    /**
+     * Colección pública: lo que la app publica a propósito para que lo vean todos sus usuarios
+     * (ranking, catálogo, tablón). Vive en la pieza pública, no en el móvil; todo lo demás sigue
+     * privado. Cada documento lleva su autor y nadie puede cambiar lo de otro.
+     */
+    fun coleccionPublica(nombre: String) = ColeccionPublica(this, nombre)
+
+    /** Usa tu propia pieza pública (su invitación) en vez de la universal; `null` vuelve a la universal. */
+    fun usarPiezaPublica(invitacion: String?) = envolver { nucleo.usePublicServer(invitacion) }
 
     // ---------- Contactos ----------
 
@@ -405,4 +419,50 @@ class Consulta internal constructor(private val coleccion: Coleccion) {
 
     /** Como `Coleccion.escuchar`, pero solo con los documentos de la consulta. */
     fun escuchar(oyente: (List<Documento>) -> Unit): () -> Unit = coleccion.escucharCon(::obtener, oyente)
+}
+
+/**
+ * Colección pública (ver [MobileMesh.coleccionPublica]). Las operaciones van por la red: trabajan en
+ * segundo plano y avisan con `alTerminar` en el hilo principal.
+ */
+class ColeccionPublica internal constructor(internal val mesh: MobileMesh, val nombre: String) {
+    /** Publica (o actualiza) el documento `id`, solo si es mío. Como mucho 4 KB de campos. */
+    fun publicar(id: String, campos: Map<String, Any?>, alTerminar: (Result<Unit>) -> Unit = {}) =
+        MobileMesh.enSegundoPlano({ mesh.nucleo.publish(nombre, id, JSONObject(campos).toString()) }, alTerminar)
+
+    /** Borra un documento que publiqué. */
+    fun borrar(id: String, alTerminar: (Result<Unit>) -> Unit = {}) =
+        MobileMesh.enSegundoPlano({ mesh.nucleo.unpublish(nombre, id) }, alTerminar)
+
+    /** Consulta lo publicado por todos: `ranking.ordenarPor("puntos", true).limite(10).obtener { … }`. */
+    fun donde(campo: String, operador: String, valor: Any? = null) = ConsultaPublica(this).donde(campo, operador, valor)
+
+    fun ordenarPor(campo: String, descendente: Boolean = false) = ConsultaPublica(this).ordenarPor(campo, descendente)
+
+    fun obtener(alTerminar: (Result<List<DocumentoPublico>>) -> Unit) = ConsultaPublica(this).obtener(alTerminar)
+}
+
+class ConsultaPublica internal constructor(private val coleccion: ColeccionPublica) {
+    private val filtros = mutableListOf<PublicFilter>()
+    private var orden: String? = null
+    private var descendente = false
+    private var maximo = 50
+
+    /** Operadores: `==`, `!=`, `<`, `<=`, `>`, `>=`, `contiene`, `empieza`, `existe`. */
+    fun donde(campo: String, operador: String, valor: Any? = null) = apply {
+        // El valor viaja como JSON suelto: 10, "pan", true.
+        filtros += PublicFilter(campo, operador, JSONArray(listOf(valor)).toString().removeSurrounding("[", "]"))
+    }
+
+    fun ordenarPor(campo: String, descendente: Boolean = false) = apply { orden = campo; this.descendente = descendente }
+
+    /** Como mucho `n` documentos (1–100; 50 por defecto). */
+    fun limite(n: Int) = apply { maximo = n.coerceIn(1, 100) }
+
+    fun obtener(alTerminar: (Result<List<DocumentoPublico>>) -> Unit) = MobileMesh.enSegundoPlano({
+        coleccion.mesh.nucleo.publicQuery(coleccion.nombre, filtros.toList(), orden, descendente, maximo.toUInt()).map { d ->
+            val o = JSONObject(d.fields)
+            DocumentoPublico(d.id, d.author, o.keys().asSequence().associateWith { k -> o.get(k).takeIf { it != JSONObject.NULL } })
+        }
+    }, alTerminar)
 }

@@ -69,7 +69,7 @@ fn sin_app(id: &str) -> String {
 }
 
 /// La app de esta cuenta (la pone el SDK al abrirla).
-fn app_de(store: &Store) -> Result<String> {
+pub(crate) fn app_de(store: &Store) -> Result<String> {
     Ok(store.setting("app")?.unwrap_or_default())
 }
 

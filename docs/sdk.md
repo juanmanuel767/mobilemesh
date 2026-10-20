@@ -95,6 +95,24 @@ val codigo = mesh.copiaDeRecuperacion("una contraseña larga") // el usuario lo 
 MobileMesh.recuperar(context, codigo, "una contraseña larga")  // en el teléfono nuevo
 ```
 
+### Colecciones públicas: lo que ven todos
+
+Para lo que la app quiere que vean **todos** sus usuarios (un ranking, un catálogo, un tablón). Va a la
+pieza pública (la universal o la tuya); todo lo demás sigue privado en cada móvil. Cada documento
+lleva su autor y nadie puede cambiar ni borrar lo de otro. Hasta 4 KB por documento y 200 por cuenta
+en cada colección; consultas con los mismos filtros, orden y límite (≤100).
+
+```kotlin
+val ranking = mesh.coleccionPublica("ranking")
+ranking.publicar("ana", mapOf("nombre" to "Ana", "puntos" to 120))
+ranking.ordenarPor("puntos", descendente = true).limite(10).obtener { r ->
+    r.onSuccess { top -> top.forEach { println("${it.campos["nombre"]}: ${it.campos["puntos"]}") } }
+}
+```
+
+Tu propia pieza: `mesh <carpeta> publico 0.0.0.0:7956 <ruta pública>` y
+`mesh.usarPiezaPublica("<su invitación>")`.
+
 ## 5. Compartir datos con permisos
 
 ```kotlin

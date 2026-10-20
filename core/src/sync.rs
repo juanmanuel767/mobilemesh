@@ -391,8 +391,13 @@ fn matches(r: &Record, f: &Filter) -> Result<bool> {
 /// Documentos de `collection` que cumplen todas las condiciones, ordenados por `order` (campo,
 /// descendente) y como mucho `limit`. Los que no tienen el campo de orden van al final.
 pub fn query(store: &Store, collection: &str, filters: &[Filter], order: Option<(&str, bool)>, limit: Option<usize>) -> Result<Vec<Record>> {
+    filter_records(records(store, collection)?, filters, order, limit)
+}
+
+/// El motor de `query` sobre registros ya cargados (también lo usan las colecciones públicas).
+pub(crate) fn filter_records(recs: Vec<Record>, filters: &[Filter], order: Option<(&str, bool)>, limit: Option<usize>) -> Result<Vec<Record>> {
     let mut out = Vec::new();
-    for r in records(store, collection)? {
+    for r in recs {
         let mut ok = true;
         for f in filters {
             ok &= matches(&r, f)?;

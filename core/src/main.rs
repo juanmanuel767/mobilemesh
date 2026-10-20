@@ -36,6 +36,9 @@ const USO: &str = "uso:
   mesh <carpeta> directorio                         buscar en mis relés relés y guardianes nuevos
   mesh <carpeta> guardian <ip:puerto> <ruta pública>   ser guardián: guardar códigos y copias cifradas de cualquiera
   mesh <carpeta> nombres <ip:puerto> <ruta pública>    ser guía de nombres: registrar y buscar usuarios por nombre
+  mesh <carpeta> publico <ip:puerto> <ruta pública>    ser pieza pública: lo que las apps publican para todos
+  mesh <carpeta> publicar <pieza> <colección> <id> <json>   publicar un documento para todos
+  mesh <carpeta> consultar-publico <pieza> <colección> [orden]   lo publicado por todos (mayor primero)
   mesh <carpeta> registrar-nombre <guía> <nombre> <mi ruta>   registrar mi nombre en una guía
   mesh <carpeta> buscar-nombre <guía> <nombre>        invitación de un nombre
   mesh <carpeta> pedir-contacto <guía> <nombre>       avisar a un nombre de que quiero hablar con él
@@ -325,6 +328,31 @@ fn run() -> Result<()> {
                     eprintln!("conexión rechazada: {e}");
                 }
             });
+        }
+        ["publico", addr, public] => {
+            let (me, store) = open()?;
+            mobilemesh_core::publico::enable(&store)?;
+            drop(store);
+            let l = TcpListener::bind(addr)?;
+            println!("colecciones públicas escuchando en {}", l.local_addr()?);
+            println!("invitación: {}", invite(&me, public));
+            mobilemesh_core::accept_loop(l, dir.to_path_buf(), me, || false, |r| {
+                if let Err(e) = r {
+                    eprintln!("conexión rechazada: {e}");
+                }
+            });
+        }
+        ["publicar", pieza, coleccion, id, campos] => {
+            let (me, store) = open()?;
+            mobilemesh_core::publico::publish(&store, &me, pieza, coleccion, id, campos)?;
+            println!("publicado");
+        }
+        ["consultar-publico", pieza, coleccion, rest @ ..] => {
+            let (me, store) = open()?;
+            let orden = rest.first().map(|o| o.to_string());
+            for (id, autor, campos) in mobilemesh_core::publico::query(&store, &me, pieza, coleccion, vec![], orden, true, 20)? {
+                println!("{id}  {campos}  (de {}…)", &autor[..12]);
+            }
         }
         ["registrar-nombre", guia, nombre, ruta] => {
             let (me, store) = open()?;

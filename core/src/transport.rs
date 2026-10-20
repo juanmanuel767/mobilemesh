@@ -166,6 +166,18 @@ pub enum Frame {
     },
     NombreSolicitudes,
     Solicitudes { lista: Vec<(String, String)> },
+    /// Colecciones públicas: publicar / borrar lo mío / consultar lo de todos / respuesta.
+    PublicoPut { app: String, coleccion: String, id: String, campos: String },
+    PublicoBorrar { app: String, coleccion: String, id: String },
+    PublicoConsulta {
+        app: String,
+        coleccion: String,
+        filtros: Vec<(String, String, String)>,
+        orden: Option<String>,
+        desc: bool,
+        limite: u32,
+    },
+    PublicoLista { docs: Vec<(String, String, String)> },
 }
 
 pub struct Session {

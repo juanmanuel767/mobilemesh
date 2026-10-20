@@ -95,6 +95,9 @@ const MIGRATIONS: &[&str] = &[
     // cuenta pertenece cada dispositivo visto.
     "ALTER TABLE contacts ADD COLUMN device TEXT;
      CREATE TABLE device_accounts(device TEXT PRIMARY KEY, account TEXT NOT NULL);",
+    // Colecciones públicas (solo en la pieza pública): lo que las apps publican a propósito.
+    "CREATE TABLE publicos(app TEXT NOT NULL, coleccion TEXT NOT NULL, id TEXT NOT NULL, autor TEXT NOT NULL,
+       campos TEXT NOT NULL, actualizado INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY(app, coleccion, id));",
 ];
 
 /// Mensaje tal como va dentro de una copia de seguridad.
@@ -986,6 +989,42 @@ impl Store {
             }
         }
         Ok(())
+    }
+
+    // ---------- Colecciones públicas (pieza pública) ----------
+
+    pub fn public_author(&self, app: &str, col: &str, id: &str) -> Result<Option<String>> {
+        Ok(self
+            .db
+            .query_row("SELECT autor FROM publicos WHERE app = ?1 AND coleccion = ?2 AND id = ?3", params![app, col, id], |r| r.get(0))
+            .optional()?)
+    }
+
+    pub fn public_count(&self, app: &str, col: &str, autor: &str) -> Result<usize> {
+        let n: i64 = self.db.query_row("SELECT COUNT(*) FROM publicos WHERE app = ?1 AND coleccion = ?2 AND autor = ?3", params![app, col, autor], |r| r.get(0))?;
+        Ok(n as usize)
+    }
+
+    pub fn public_put(&self, app: &str, col: &str, id: &str, autor: &str, campos: &str) -> Result<()> {
+        self.db.execute(
+            "INSERT INTO publicos(app, coleccion, id, autor, campos) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(app, coleccion, id) DO UPDATE SET campos = excluded.campos, actualizado = unixepoch()",
+            params![app, col, id, autor, campos],
+        )?;
+        Ok(())
+    }
+
+    pub fn public_delete(&self, app: &str, col: &str, id: &str) -> Result<()> {
+        self.db.execute("DELETE FROM publicos WHERE app = ?1 AND coleccion = ?2 AND id = ?3", params![app, col, id])?;
+        Ok(())
+    }
+
+    /// Todos los documentos de una colección pública: (id, autor, campos).
+    // ponytail: carga la colección entera en cada consulta; índices por campo si crecen mucho.
+    pub fn public_docs(&self, app: &str, col: &str) -> Result<Vec<(String, String, String)>> {
+        let mut st = self.db.prepare("SELECT id, autor, campos FROM publicos WHERE app = ?1 AND coleccion = ?2 ORDER BY id")?;
+        let rows = st.query_map(params![app, col], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     pub fn add_holder(&self, name: &str, account: &str, addr: &str) -> Result<()> {

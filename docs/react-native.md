@@ -48,6 +48,11 @@ const { estado } = await MobileMesh.pagar("cafe");   // "APROBADO" | "RECHAZADO"
 // Base de datos cifrada en el móvil
 await MobileMesh.guardar("tareas", "t1", { titulo: "Comprar pan" });
 console.log(await MobileMesh.datos("tareas"));       // [{id: "t1", campos: {titulo: "Comprar pan"}}]
+
+// Colección pública: lo que la app publica para que lo vean todos (ranking, catálogo)
+await MobileMesh.publicar("ranking", "ana", { nombre: "Ana", puntos: 120 });
+const top = await MobileMesh.consultarPublico("ranking", { orden: "puntos", desc: true, limite: 10 });
+// [{id: "beto", autor: "<cuenta>", campos: {nombre: "Beto", puntos: 300}}, …]
 ```
 
 Los avisos de mensajes nuevos funcionan con la app cerrada (servicio propio, sin Google).

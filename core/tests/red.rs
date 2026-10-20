@@ -1557,3 +1557,51 @@ fn un_rele_en_la_wifi_de_otra_casa_se_salta_al_momento() {
     assert!(mobilemesh_core::transport::open("relay=10.123.45.6:7840/0123456789abcdef0123456789abcdef").is_err());
     assert!(t.elapsed() < std::time::Duration::from_secs(1), "{:?}", t.elapsed());
 }
+
+#[test]
+fn colecciones_publicas_ranking_de_todos_y_cada_uno_lo_suyo() {
+    use mobilemesh_core::publico;
+    let p = device("publico");
+    publico::enable(&st(&p.0)).unwrap();
+    // Una operación = una conexión.
+    type Docs = Result<Vec<(String, String, String)>, String>;
+    let pieza = |op: &dyn Fn(&str) -> Docs| {
+        let (addr, h) = listen_once(p.0.clone());
+        let r = op(&format!("mobilemesh:2:{}:{addr}", p.1.id()));
+        let _ = h.join();
+        r
+    };
+    let cuenta = |n: &str, app: &str| {
+        let d = device(n);
+        st(&d.0).set_setting("app", Some(app)).unwrap();
+        d
+    };
+    let publicar = |d: &(PathBuf, Identity), id: &str, campos: &str| {
+        pieza(&|g| publico::publish(&st(&d.0), &d.1, g, "ranking", id, campos).map(|_| vec![]).map_err(|e| e.to_string()))
+    };
+    let consultar = |d: &(PathBuf, Identity), filtros: Vec<(String, String, String)>| {
+        pieza(&|g| publico::query(&st(&d.0), &d.1, g, "ranking", filtros.clone(), Some("puntos".into()), true, 10).map_err(|e| e.to_string())).unwrap()
+    };
+
+    let (ana, beto, otra_app) = (cuenta("ana-pub", "com.juego"), cuenta("beto-pub", "com.juego"), cuenta("eva-pub", "com.otra"));
+    publicar(&ana, "ana", r#"{"nombre":"Ana","puntos":120}"#).unwrap();
+    publicar(&beto, "beto", r#"{"nombre":"Beto","puntos":300}"#).unwrap();
+
+    // Todos ven lo de todos, ordenado (el ranking), con su autor verificado.
+    let top = consultar(&ana, vec![]);
+    assert_eq!(top.iter().map(|d| d.0.as_str()).collect::<Vec<_>>(), ["beto", "ana"]);
+    assert_eq!(top[0].1, beto.1.id());
+    // Filtros como en las colecciones privadas.
+    assert_eq!(consultar(&beto, vec![("puntos".into(), ">".into(), "200".into())]).len(), 1);
+    // Nadie cambia lo de otro; cada uno sí lo suyo.
+    assert!(publicar(&beto, "ana", r#"{"puntos":999}"#).unwrap_err().contains("otra cuenta"));
+    publicar(&ana, "ana", r#"{"nombre":"Ana","puntos":500}"#).unwrap();
+    assert_eq!(consultar(&beto, vec![])[0].0, "ana");
+    // Otra app no ve nada de esta.
+    assert!(consultar(&otra_app, vec![]).is_empty());
+    // Solo objetos JSON pequeños.
+    assert!(publicar(&ana, "x", "no es json").is_err());
+    // Borrar lo mío.
+    pieza(&|g| publico::unpublish(&st(&ana.0), &ana.1, g, "ranking", "ana").map(|_| vec![]).map_err(|e| e.to_string())).unwrap();
+    assert_eq!(consultar(&beto, vec![]).len(), 1);
+}

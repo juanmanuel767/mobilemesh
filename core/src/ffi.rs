@@ -110,6 +110,22 @@ pub struct Contact {
     pub addr: Option<String>,
 }
 
+/// Condición de una consulta pública: `value` es un valor JSON (`10`, `"pan"`, `true`).
+#[derive(uniffi::Record)]
+pub struct PublicFilter {
+    pub field: String,
+    pub op: String,
+    pub value: String,
+}
+
+/// Documento de una colección pública: `author` es la cuenta que lo publicó; `fields`, objeto JSON.
+#[derive(uniffi::Record)]
+pub struct PublicDoc {
+    pub id: String,
+    pub author: String,
+    pub fields: String,
+}
+
 #[derive(uniffi::Record)]
 pub struct Field {
     pub name: String,
@@ -247,6 +263,13 @@ fn llamada_por_rele(dir: PathBuf, me: Identity, events: Option<Arc<dyn Events>>)
             e.received(n as u32);
         }
     }
+}
+
+fn public_server(store: &Store) -> R<String> {
+    store
+        .setting("publico_elegido")?
+        .or_else(|| crate::publico::UNIVERSALES.first().map(|g| g.to_string()))
+        .ok_or_else(|| fail("no hay ninguna pieza pública configurada"))
 }
 
 fn name_guide(store: &Store) -> R<String> {
@@ -388,6 +411,36 @@ impl Mesh {
     pub fn set_app(&self, app: String) -> R<()> {
         let app = crate::nombres::normalize_app(&app)?;
         Ok(Store::open(&self.dir, self.me.db_key())?.set_setting("app", Some(&app).filter(|a| !a.is_empty()).map(|a| a.as_str()))?)
+    }
+
+    // ---------- Colecciones públicas ----------
+
+    /// Elige la pieza pública (su invitación), o vuelve a la universal con `None`.
+    pub fn use_public_server(&self, invitation: Option<String>) -> R<()> {
+        if let Some(i) = &invitation {
+            crate::parse_invite(i)?;
+        }
+        Ok(Store::open(&self.dir, self.me.db_key())?.set_setting("publico_elegido", invitation.as_deref())?)
+    }
+
+    /// Publica (o actualiza) un documento que verán todos los usuarios de la app. `fields`: objeto JSON.
+    pub fn publish(&self, collection: String, id: String, fields: String) -> R<()> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        Ok(crate::publico::publish(&store, &self.me, &public_server(&store)?, &collection, &id, &fields)?)
+    }
+
+    /// Borra un documento que publiqué.
+    pub fn unpublish(&self, collection: String, id: String) -> R<()> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        Ok(crate::publico::unpublish(&store, &self.me, &public_server(&store)?, &collection, &id)?)
+    }
+
+    /// Consulta lo publicado por todos: filtros, orden (campo, descendente) y como mucho `limit` (≤100).
+    pub fn public_query(&self, collection: String, filters: Vec<PublicFilter>, order: Option<String>, descending: bool, limit: u32) -> R<Vec<PublicDoc>> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        let filtros = filters.into_iter().map(|f| (f.field, f.op, f.value)).collect();
+        let docs = crate::publico::query(&store, &self.me, &public_server(&store)?, &collection, filtros, order, descending, limit)?;
+        Ok(docs.into_iter().map(|(id, author, fields)| PublicDoc { id, author, fields }).collect())
     }
 
     /// Elige la guía de nombres (su invitación), o vuelve a la universal con `None`.
