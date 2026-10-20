@@ -81,7 +81,7 @@ class ReleService : Service() {
             // Candado (wss://) si hay certificado: lo deja tools/renovar-certificado.sh.
             val (cert, clave) = File(filesDir, "cert.pem") to File(filesDir, "clave.pem")
             val tls = if (cert.exists() && clave.exists()) listOf("--tls", cert.path, clave.path) else emptyList()
-            hilo = hilo { vigilar("relé", listOf(File(applicationInfo.nativeLibraryDir, "libmeshrele.so").path) + ARGS + directorio + tls, rele) }
+            hilo = hilo { vigilar("relé", listOf(File(applicationInfo.nativeLibraryDir, "libmeshrele.so").path) + ARGS + directorio + tls, rele, ::releResponde) }
             hilo { puerto(PUERTO, rele) }
             hilo { puerto(PUERTO_WEB, rele) }
             hilo {
@@ -164,13 +164,38 @@ class ReleService : Service() {
         }
     }
 
-    /** Mantiene un programa en marcha: si se cierra, lo vuelve a abrir a los 3 s. */
-    private fun vigilar(nombre: String, orden: List<String>, log: File) {
+    /** ¿El relé contesta? (QUIEN por la red local del propio móvil). */
+    private fun releResponde(): Boolean = runCatching {
+        java.net.Socket().use { s ->
+            s.connect(java.net.InetSocketAddress("127.0.0.1", PUERTO), 5000)
+            s.soTimeout = 5000
+            s.getOutputStream().write("QUIEN\n".toByteArray())
+            s.getInputStream().bufferedReader().readLine() != null
+        }
+    }.getOrDefault(false)
+
+    /**
+     * Mantiene un programa en marcha: si se cierra, lo vuelve a abrir a los 3 s. Con `responde`, se
+     * comprueba cada minuto; si falla 3 veces seguidas está colgado y se cierra para reabrirlo.
+     */
+    private fun vigilar(nombre: String, orden: List<String>, log: File, responde: (() -> Boolean)? = null) {
         while (true) {
             log.appendText("$nombre inicia ${java.util.Date()}\n")
             val code = runCatching {
-                ProcessBuilder(orden).redirectErrorStream(true)
-                    .redirectOutput(ProcessBuilder.Redirect.appendTo(log)).start().waitFor()
+                val p = ProcessBuilder(orden).redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.appendTo(log)).start()
+                if (responde != null) hilo {
+                    var fallos = 0
+                    while (p.isAlive) {
+                        Thread.sleep(60_000)
+                        fallos = if (responde()) 0 else fallos + 1
+                        if (fallos >= 3 && p.isAlive) {
+                            log.appendText("$nombre no responde: se reinicia ${java.util.Date()}\n")
+                            p.destroyForcibly()
+                        }
+                    }
+                }
+                p.waitFor()
             }.fold({ "$it" }, { it.message })
             log.appendText("$nombre terminó ($code) ${java.util.Date()}\n")
             Thread.sleep(3000)
