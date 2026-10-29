@@ -154,12 +154,25 @@ fn una_misma_direccion_no_acapara_las_conexiones() {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = l.local_addr().unwrap().to_string();
     thread::spawn(move || mobilemesh_core::accept_loop(l, dir, me, || false, |_| {}));
-    let _lentas: Vec<TcpStream> = (0..mobilemesh_core::MAX_PER_IP).map(|_| {
-        let mut s = TcpStream::connect(&addr).unwrap();
-        s.write_all(&[0, 32]).unwrap();
-        s
-    }).collect();
-    thread::sleep(Duration::from_millis(300));
+    // Los huecos son comunes a todo el programa: las conexiones de la prueba anterior pueden tardar
+    // en soltar los suyos. Se repone cada lenta rechazada hasta tener todas aceptadas a la vez.
+    let mut lentas: Vec<TcpStream> = Vec::new();
+    for _ in 0..50 {
+        while lentas.len() < mobilemesh_core::MAX_PER_IP {
+            let mut s = TcpStream::connect(&addr).unwrap();
+            s.write_all(&[0, 32]).unwrap();
+            lentas.push(s);
+        }
+        thread::sleep(Duration::from_millis(300));
+        lentas.retain(|s| {
+            s.set_nonblocking(true).unwrap();
+            matches!((&*s).read(&mut [0u8; 1]), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock)
+        });
+        if lentas.len() == mobilemesh_core::MAX_PER_IP {
+            break;
+        }
+    }
+    assert_eq!(lentas.len(), mobilemesh_core::MAX_PER_IP, "no se llenaron los huecos");
     // La siguiente desde la misma dirección se cierra al momento, sin contestar.
     let mut otra = TcpStream::connect(&addr).unwrap();
     otra.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
