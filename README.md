@@ -197,7 +197,7 @@ flowchart LR
 
 ```sh
 cd core
-cargo test --release            # 75 pruebas, entre ellas 8 ataques simulados
+cargo test --release            # 76 pruebas, entre ellas 8 ataques simulados
 cargo build --release
 M=target/release/mesh
 $M /tmp/ana init && $M /tmp/beto init
