@@ -9,7 +9,6 @@ base64 = "0.23.1"
 chacha20poly1305 = "0.10.1"
 ed25519-dalek = "2"
 getrandom = "0.3"
-rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.10"
@@ -19,9 +18,19 @@ vodozemac = "0.11.1"
 # Android/iPhone: puente con Kotlin/Swift. No entra en la versión para navegador.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 uniffi = "0.32.2"
+# SQLCipher cifra el archivo entero, no solo los valores: así los nombres de las
+# colecciones y de los contactos tampoco quedan en claro, y SQLite puede indexar
+# y ordenar por los valores. Necesita OpenSSL, que no compila a WebAssembly, así
+# que en el navegador se usa SQLite normal y los valores siguen cifrados uno a uno.
+# `vendored-openssl` compila OpenSSL desde su código fuente junto con la
+# librería. Hace falta para el teléfono: el NDK de Android no trae OpenSSL, y sin
+# esto la compilación cruzada falla con «openssl/crypto.h no encontrado».
+# De paso, la compilación deja de depender de la OpenSSL que tenga cada equipo.
+rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher-vendored-openssl"] }
 
 # Navegador (WebAssembly): los números al azar los da el navegador.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
 getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }

@@ -21,6 +21,16 @@ fn st(dir: &std::path::Path) -> Store {
     Store::open(dir, Identity::load(dir, &Plain).unwrap().db_key()).unwrap()
 }
 
+/// Abre la base de un dispositivo de prueba sin pasar por `Store`, con su clave
+/// de cifrado, para manipularla a mano como haría un fallo o un ataque.
+fn raw_db(dir: &std::path::Path) -> rusqlite::Connection {
+    let key = Identity::load(dir, &Plain).unwrap().db_key();
+    let db = rusqlite::Connection::open(dir.join("mesh.db")).unwrap();
+    let hex = mobilemesh_core::store::database_key_hex(&key);
+    db.execute_batch(&format!("PRAGMA key = \"x'{hex}'\";")).unwrap();
+    db
+}
+
 fn befriend(a: &(PathBuf, Identity), an: &str, b: &(PathBuf, Identity), bn: &str) {
     st(&a.0).add_contact(bn, &b.1.id(), None).unwrap();
     st(&b.0).add_contact(an, &a.1.id(), None).unwrap();
@@ -372,9 +382,13 @@ fn la_base_de_datos_copiada_no_revela_el_texto() {
         assert!(!raw.windows(17).any(|w| w == b"texto-secreto-xyz"), "texto en claro en {}", d.display());
         assert_eq!(statuses(d).len(), 1, "pero con la clave sí se lee");
     }
-    // Abierta con otra clave (otro dispositivo), no se lee.
-    let ajena = Store::open(&bob.0, [9u8; 32]).unwrap();
-    assert!(ajena.list().unwrap()[0].body.contains("no se puede descifrar"));
+    // Con la clave de otro dispositivo la base ni se abre. Antes sí se abría y
+    // solo fallaba al descifrar cada mensaje: ahora el archivo entero está
+    // cifrado, así que ni los nombres de los contactos se pueden leer.
+    assert!(
+        Store::open(&bob.0, [9u8; 32]).is_err(),
+        "la base se abrió con una clave que no es la de este dispositivo"
+    );
 }
 
 #[test]
@@ -393,7 +407,7 @@ fn sesion_perdida_se_rehace_sola() {
     };
     assert_eq!(send("uno"), Ok(1));
     // Bob pierde el estado del cifrado (p. ej. base de datos dañada) pero conserva su identidad.
-    let db = rusqlite::Connection::open(bob.0.join("mesh.db")).unwrap();
+    let db = raw_db(&bob.0);
     db.execute_batch("DELETE FROM olm_sessions;").unwrap();
     drop(db);
     assert!(send("dos").unwrap_err().contains("perdió la sesión"));
@@ -697,7 +711,7 @@ fn copia_alterada_o_vieja_se_detecta() {
     std::fs::write(&held, &b).unwrap();
 
     // Bob intenta hacer pasar la copia por otra versión: no cuela.
-    let db = rusqlite::Connection::open(bob.0.join("mesh.db")).unwrap();
+    let db = raw_db(&bob.0);
     db.execute("UPDATE replicas_held SET version = version + 1", []).unwrap();
     drop(db);
     let err = with_holder(&alice, &bob, &alice.1, &alice.0, |s, h| replica::restore(s, &alice.1, h)).err().unwrap().to_string();

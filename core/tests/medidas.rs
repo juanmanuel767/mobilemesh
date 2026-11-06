@@ -53,11 +53,17 @@ fn counted(bob: &(PathBuf, Identity)) -> (String, Arc<AtomicUsize>, thread::Join
     (front_addr, bytes, h)
 }
 
-/// Tamaño de la base tras pasar al archivo principal lo que está en el diario WAL.
+/// Espacio que ocupa la base en el disco, con su diario incluido.
+///
+/// Antes abría la base para integrar el WAL antes de medir, pero la base va
+/// cifrada y desde fuera no se puede abrir sin la clave del dispositivo. Sumar
+/// el archivo y su diario mide lo mismo y no necesita abrirla.
 fn db_size(dir: &std::path::Path) -> u64 {
-    let db = rusqlite::Connection::open(dir.join("mesh.db")).unwrap();
-    db.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(())).unwrap();
-    std::fs::metadata(dir.join("mesh.db")).unwrap().len()
+    ["mesh.db", "mesh.db-wal", "mesh.db-shm"]
+        .iter()
+        .filter_map(|name| std::fs::metadata(dir.join(name)).ok())
+        .map(|m| m.len())
+        .sum()
 }
 
 #[test]

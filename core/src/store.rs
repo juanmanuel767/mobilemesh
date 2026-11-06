@@ -138,6 +138,135 @@ fn subkey(key: &[u8; 32], label: &[u8]) -> [u8; 32] {
     Sha256::new_with_prefix(label).chain_update(key).finalize().into()
 }
 
+/// Clave de la base en hexadecimal, para lo que necesite abrirla sin pasar por
+/// `Store`: una prueba que simule un fallo, o una herramienta de diagnóstico.
+///
+/// Deriva de la identidad del dispositivo, así que quien ya tiene esa identidad
+/// no gana nada nuevo con esto, y en otro teléfono no sirve de nada.
+#[cfg(not(target_arch = "wasm32"))]
+#[must_use]
+pub fn database_key_hex(key: &[u8; 32]) -> String {
+    crate::identity::to_hex(&subkey(key, b"mobilemesh-base-v1"))
+}
+
+/// Abre la base con su clave de cifrado.
+///
+/// En el navegador no hay SQLCipher (necesita OpenSSL, que no compila a
+/// WebAssembly): allí la base va sin cifrar y son los valores los que están
+/// cifrados uno a uno, como antes.
+#[cfg(target_arch = "wasm32")]
+fn open_encrypted(path: &Path, _key: &[u8; 32]) -> Result<Connection> {
+    Ok(Connection::open(path)?)
+}
+
+/// Abre la base cifrada con SQLCipher y, si encuentra una de una versión
+/// anterior (sin cifrar), la convierte antes de seguir.
+#[cfg(not(target_arch = "wasm32"))]
+fn open_encrypted(path: &Path, key: &[u8; 32]) -> Result<Connection> {
+    // Subclave propia: no se reutiliza la de los cuerpos ni la de Olm.
+    let hex = crate::identity::to_hex(&subkey(key, b"mobilemesh-base-v1"));
+    if let Some(db) = try_open_with_key(path, &hex)? {
+        return Ok(db);
+    }
+    // No se pudo descifrar. Si el archivo es una base en claro, es de una
+    // versión anterior y se convierte; cualquier otra cosa es un error real.
+    if !is_plain_sqlite(path)? {
+        return Err("no se pudo abrir la base de datos con la clave de este dispositivo".into());
+    }
+    encrypt_in_place(path, &hex)?;
+    try_open_with_key(path, &hex)?
+        .ok_or_else(|| "la base no se pudo abrir después de cifrarla".into())
+}
+
+/// Devuelve la conexión si la clave abre la base, o `None` si no la descifra.
+#[cfg(not(target_arch = "wasm32"))]
+fn try_open_with_key(path: &Path, hex: &str) -> Result<Option<Connection>> {
+    let db = Connection::open(path)?;
+    db.execute_batch(&format!("PRAGMA key = \"x'{hex}'\";"))?;
+    // Leer el catálogo es la comprobación: con la clave equivocada, falla.
+    match db.query_row::<i64, _, _>("SELECT count(*) FROM sqlite_master", [], |r| r.get(0)) {
+        Ok(_) => Ok(Some(db)),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Indica si el archivo es una base SQLite sin cifrar (su cabecera se ve).
+#[cfg(not(target_arch = "wasm32"))]
+fn is_plain_sqlite(path: &Path) -> Result<bool> {
+    use std::io::Read;
+    let mut head = [0u8; 16];
+    let mut f = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return Ok(false),
+    };
+    match f.read_exact(&mut head) {
+        Ok(()) => Ok(&head == b"SQLite format 3\0"),
+        Err(_) => Ok(false),
+    }
+}
+
+/// Convierte una base en claro en una cifrada, sin perder nada.
+///
+/// Escribe la copia cifrada aparte, la comprueba y solo entonces sustituye el
+/// archivo con un renombrado, que es atómico: si se corta la luz a medias, la
+/// base antigua sigue entera. Al final, la copia en claro se sobrescribe antes
+/// de borrarla para que no queden restos legibles en el disco.
+#[cfg(not(target_arch = "wasm32"))]
+fn encrypt_in_place(path: &Path, hex: &str) -> Result<()> {
+    let temp = path.with_extension("db.cifrando");
+    let _ = std::fs::remove_file(&temp);
+    let quoted = temp.to_string_lossy().replace('\'', "''");
+    {
+        let old = Connection::open(path)?;
+        // El WAL puede guardar cambios que todavía no están en el archivo:
+        // volver al diario normal los integra antes de copiar.
+        let _ = old.query_row("PRAGMA journal_mode = DELETE", [], |_| Ok(()));
+        let version: i64 = old.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        old.execute_batch(&format!(
+            "ATTACH DATABASE '{quoted}' AS cifrada KEY \"x'{hex}'\";"
+        ))?;
+        old.query_row("SELECT sqlcipher_export('cifrada')", [], |_| Ok(()))?;
+        // `sqlcipher_export` NO copia `user_version`, y de él dependen las
+        // migraciones del esquema: sin esta línea la app volvería a aplicarlas
+        // todas sobre datos ya migrados. Comprobado con una prueba.
+        old.execute_batch(&format!("PRAGMA cifrada.user_version = {version};"))?;
+        old.execute_batch("DETACH DATABASE cifrada;")?;
+    }
+    // Comprobar la copia antes de tocar el original.
+    match try_open_with_key(&temp, hex)? {
+        Some(_) => {}
+        None => {
+            let _ = std::fs::remove_file(&temp);
+            return Err("la copia cifrada no se pudo verificar: no se cambió nada".into());
+        }
+    }
+    let plain = path.with_extension("db.sin-cifrar");
+    std::fs::rename(path, &plain)?;
+    std::fs::rename(&temp, path)?;
+    wipe(&plain)?;
+    Ok(())
+}
+
+/// Sobrescribe un archivo con ceros y lo borra.
+#[cfg(not(target_arch = "wasm32"))]
+fn wipe(path: &Path) -> Result<()> {
+    use std::io::Write;
+    if let Ok(meta) = std::fs::metadata(path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new().write(true).open(path) {
+            let zeros = vec![0u8; 64 * 1024];
+            let mut left = meta.len();
+            while left > 0 {
+                let n = usize::try_from(left.min(zeros.len() as u64)).unwrap_or(zeros.len());
+                f.write_all(&zeros[..n])?;
+                left -= n as u64;
+            }
+            f.sync_all()?;
+        }
+    }
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
 pub struct Store {
     db: Connection,
     files: PathBuf,
@@ -166,7 +295,7 @@ pub type Outgoing = (String, String, Option<FileMeta>);
 impl Store {
     /// `key` viene de la identidad del dispositivo (protegida por Keystore).
     pub fn open(dir: &Path, key: [u8; 32]) -> Result<Store> {
-        let db = Connection::open(dir.join("mesh.db"))?;
+        let db = open_encrypted(&dir.join("mesh.db"), &key)?;
         // Si otro (la app o su servicio) está escribiendo, esperar un poco en vez de fallar.
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         // Lo borrado se sobrescribe con ceros: no quedan restos del texto en el archivo.
