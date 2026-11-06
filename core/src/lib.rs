@@ -696,10 +696,28 @@ pub fn send_or_deposit(store: &Store, me: &Identity, peer: &str, route: &str) ->
     match deliver(store, me, peer, route) {
         Ok(n) => Ok(Sent::Delivered(n)),
         Err(e) => match deposit_pending(store, me, peer, route)? {
-            0 => Err(e),
+            0 => Err(con_causa_probable(e)),
             n => Ok(Sent::Deposited(n)),
         },
     }
+}
+
+/// Añade al fallo de red la causa más probable, para quien envía.
+///
+/// Si el otro teléfono corta la conexión, lo más habitual es que todavía no nos
+/// tenga añadidos: por diseño rechaza en silencio a quien no es contacto suyo
+/// (`docs/fase-0.md`), así que lo único que llega es un cierre seco que no
+/// explica nada. La pista la deduce quien envía y no sale del otro teléfono, de
+/// modo que no revela si nos conoce ni si existe.
+fn con_causa_probable(e: Box<dyn std::error::Error + Send + Sync>) -> Box<dyn std::error::Error + Send + Sync> {
+    let texto = e.to_string();
+    if texto.contains("reset by peer") || texto.contains("Connection reset") {
+        return format!(
+            "{texto}. Puede que ese contacto todavía no te tenga añadido, o que su app esté cerrada"
+        )
+        .into();
+    }
+    e
 }
 
 /// Deja los mensajes de texto pendientes en el buzón del destinatario. Solo si ya hablamos alguna
