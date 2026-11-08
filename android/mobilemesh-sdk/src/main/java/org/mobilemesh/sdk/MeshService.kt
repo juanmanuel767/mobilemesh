@@ -133,6 +133,10 @@ class MeshService : Service() {
 
     companion object {
         fun start(c: Context) {
+            // Una app puede pedir funcionar sin servicio en segundo plano. Se
+            // comprueba aquí y no en cada sitio que llama para que no se escape
+            // ninguno.
+            if (!ServicioFondo.activo(c)) return
             c.startForegroundService(Intent(c, MeshService::class.java))
         }
     }
@@ -143,6 +147,28 @@ class MeshService : Service() {
  * fabricantes no congelan una app que suena, así que la conexión sigue viva con la pantalla apagada
  * (medido en un TECNO: mensaje entregado en 1 s). Cuesta batería: el chip de sonido no se duerme.
  */
+/**
+ * Si MobileMesh mantiene un servicio en segundo plano.
+ *
+ * Encendido por defecto: es lo que permite recibir mensajes al instante y
+ * sincronizar sola la app aunque esté cerrada.
+ *
+ * Una app que solo guarde datos en el propio teléfono y no use mensajería puede
+ * apagarlo: así desaparece la notificación permanente y deja de necesitar los
+ * permisos FOREGROUND_SERVICE_REMOTE_MESSAGING, SCHEDULE_EXACT_ALARM y
+ * REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, que Google Play restringe y rechaza si
+ * la app no los justifica. Lo que se pierde es la recepción instantánea y la
+ * sincronización en segundo plano; leer y escribir datos sigue igual.
+ */
+object ServicioFondo {
+    private fun prefs(c: Context) = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)
+
+    fun activo(c: Context) = prefs(c).getBoolean("servicio_fondo", true)
+
+    /** Llámalo antes de `MobileMesh.iniciar`. */
+    fun activo(c: Context, si: Boolean) = prefs(c).edit().putBoolean("servicio_fondo", si).apply()
+}
+
 /**
  * Cómo de visible es la notificación fija del servicio.
  *
