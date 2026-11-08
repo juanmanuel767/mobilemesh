@@ -69,6 +69,19 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
     companion object {
         private val ui = Handler(Looper.getMainLooper())
 
+        /**
+         * Deja la notificación fija sin icono en la barra de estado (queda abajo
+         * del todo en la persiana). Pensado para apps que no usan mensajería y a
+         * las que la notificación permanente les estorba.
+         *
+         * Llámalo ANTES de [iniciar]: el canal se elige al arrancar el servicio.
+         *
+         * Cuidado si la app sí recibe mensajes: algunos sistemas (HiOS de TECNO,
+         * MIUI…) congelan las apps cuya notificación fija no se ve, y entonces
+         * dejan de llegar. Por eso está apagado por defecto.
+         */
+        fun avisoDiscreto(context: Context, activo: Boolean) = AvisoFijo.discreto(context.applicationContext, activo)
+
         fun estado(context: Context): EstadoCuenta {
             val guard = KeystoreGuard(context.applicationContext)
             return when (identityState(MeshHolder.dir(context), guard)) {

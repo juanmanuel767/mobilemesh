@@ -10,6 +10,9 @@ android {
         minSdk = 28 // setUnlockedDeviceRequired de Keystore
         // ponytail: solo arm64 (casi todos los móviles actuales); añadir armeabi-v7a si hace falta.
         ndk { abiFilters += "arm64-v8a" }
+        // Viajan dentro del .aar: así R8 no renombra las clases que JNA busca
+        // por nombre y las apps funcionan en release sin configurar nada.
+        consumerProguardFiles("consumer-rules.pro")
     }
 
     compileOptions {

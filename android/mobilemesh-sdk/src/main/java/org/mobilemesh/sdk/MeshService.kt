@@ -63,6 +63,16 @@ class MeshService : Service() {
         // notificación fija está oculta, y entonces no reciben nada.
         nm.deleteNotificationChannel("conexion")
         nm.createNotificationChannel(NotificationChannel("conexion-visible", "Conexión de ${Permisos.nombreApp(this)}", NotificationManager.IMPORTANCE_LOW))
+        // Discreta: sin icono en la barra de estado y abajo del todo en la persiana,
+        // para apps sin mensajería a las que la notificación fija les estorba. Es un
+        // canal aparte porque Android ignora los cambios de importancia de uno ya creado.
+        nm.createNotificationChannel(
+            NotificationChannel(
+                "conexion-discreta",
+                "Conexión de ${Permisos.nombreApp(this)}",
+                NotificationManager.IMPORTANCE_MIN,
+            )
+        )
         nm.createNotificationChannel(NotificationChannel("mensajes", "Mensajes nuevos", NotificationManager.IMPORTANCE_HIGH))
         val n = ongoing("Conectando…")
         if (Build.VERSION.SDK_INT >= 34) startForeground(ONGOING, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
@@ -111,7 +121,7 @@ class MeshService : Service() {
         override fun received(count: UInt) = Avisos.mensajeNuevo(this@MeshService, count.toInt())
     }
 
-    private fun ongoing(text: String) = Notification.Builder(this, "conexion-visible")
+    private fun ongoing(text: String) = Notification.Builder(this, AvisoFijo.canal(this))
         .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
         .setContentTitle(Permisos.nombreApp(this))
         .setContentText(text)
@@ -133,6 +143,25 @@ class MeshService : Service() {
  * fabricantes no congelan una app que suena, así que la conexión sigue viva con la pantalla apagada
  * (medido en un TECNO: mensaje entregado en 1 s). Cuesta batería: el chip de sonido no se duerme.
  */
+/**
+ * Cómo de visible es la notificación fija del servicio.
+ *
+ * Visible por defecto y a propósito: algunos sistemas (HiOS de TECNO, MIUI…)
+ * congelan las apps cuya notificación fija está oculta, y entonces dejan de
+ * recibir mensajes. Una app que no use mensajería puede pedirla discreta y así
+ * quitarla de la barra de estado.
+ */
+object AvisoFijo {
+    private fun prefs(c: Context) = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)
+
+    fun discreto(c: Context) = prefs(c).getBoolean("aviso_discreto", false)
+
+    /** Se aplica al arrancar el servicio: llámalo antes de `MobileMesh.iniciar`. */
+    fun discreto(c: Context, si: Boolean) = prefs(c).edit().putBoolean("aviso_discreto", si).apply()
+
+    fun canal(c: Context) = if (discreto(c)) "conexion-discreta" else "conexion-visible"
+}
+
 object Silencio {
     private var hilo: Thread? = null
     @Volatile private var sonando = false
