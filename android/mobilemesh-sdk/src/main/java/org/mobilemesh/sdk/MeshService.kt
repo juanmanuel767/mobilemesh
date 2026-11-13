@@ -17,8 +17,12 @@ import uniffi.mobilemesh_core.IdentityState
 import uniffi.mobilemesh_core.Mesh
 import uniffi.mobilemesh_core.identityState
 
-/** Puerto por defecto; cada app puede elegir el suyo en `MobileMesh.iniciar` (dos apps no pueden compartirlo). */
-const val PUERTO_POR_DEFECTO = 7801
+/** Puerto por defecto; cada app puede elegir el suyo en `MobileMesh.start` (dos apps no pueden compartirlo). */
+const val DEFAULT_PORT = 7801
+
+@Deprecated("Use DEFAULT_PORT", ReplaceWith("DEFAULT_PORT"))
+const val PUERTO_POR_DEFECTO = DEFAULT_PORT
+
 private const val ONGOING = 1
 private const val NEW_MESSAGE = 2
 
@@ -29,7 +33,7 @@ object MeshHolder {
     /** Quien quiere enterarse de que ha llegado algo nuevo (se llama en el hilo principal). */
     val oyentes = java.util.concurrent.CopyOnWriteArrayList<(Int) -> Unit>()
 
-    fun puerto(c: Context): Int = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE).getInt("puerto", PUERTO_POR_DEFECTO)
+    fun puerto(c: Context): Int = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE).getInt("puerto", DEFAULT_PORT)
 
     fun guardarPuerto(c: Context, puerto: Int) =
         c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE).edit().putInt("puerto", puerto).apply()
@@ -62,14 +66,14 @@ class MeshService : Service() {
         // Visible (aunque silenciosa): algunos sistemas (p. ej. HiOS de TECNO) congelan las apps cuya
         // notificación fija está oculta, y entonces no reciben nada.
         nm.deleteNotificationChannel("conexion")
-        nm.createNotificationChannel(NotificationChannel("conexion-visible", "Conexión de ${Permisos.nombreApp(this)}", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel("conexion-visible", "Conexión de ${Permissions.appName(this)}", NotificationManager.IMPORTANCE_LOW))
         // Discreta: sin icono en la barra de estado y abajo del todo en la persiana,
         // para apps sin mensajería a las que la notificación fija les estorba. Es un
         // canal aparte porque Android ignora los cambios de importancia de uno ya creado.
         nm.createNotificationChannel(
             NotificationChannel(
                 "conexion-discreta",
-                "Conexión de ${Permisos.nombreApp(this)}",
+                "Conexión de ${Permissions.appName(this)}",
                 NotificationManager.IMPORTANCE_MIN,
             )
         )
@@ -123,7 +127,7 @@ class MeshService : Service() {
 
     private fun ongoing(text: String) = Notification.Builder(this, AvisoFijo.canal(this))
         .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
-        .setContentTitle(Permisos.nombreApp(this))
+        .setContentTitle(Permissions.appName(this))
         .setContentText(text)
         .setOngoing(true)
         .setContentIntent(Avisos.abrirApp(this))
@@ -136,11 +140,11 @@ class MeshService : Service() {
             // Se decide aquí y no en cada sitio que llama, para que no se escape
             // ninguno de los cuatro.
             when (ServicioFondo.modo(c)) {
-                ModoFondo.COMPLETO -> c.startForegroundService(Intent(c, MeshService::class.java))
+                BackgroundMode.FULL -> c.startForegroundService(Intent(c, MeshService::class.java))
                 // Sin servicio, pero el despertador sigue mirando el buzón: los
                 // avisos llegan igual, con unos minutos de retraso.
-                ModoFondo.DESPERTADOR -> Despertador.programar(c)
-                ModoFondo.NINGUNO -> Unit
+                BackgroundMode.ALARM -> Despertador.programar(c)
+                BackgroundMode.NONE -> Unit
             }
         }
     }
@@ -151,8 +155,12 @@ class MeshService : Service() {
  * fabricantes no congelan una app que suena, así que la conexión sigue viva con la pantalla apagada
  * (medido en un TECNO: mensaje entregado en 1 s). Cuesta batería: el chip de sonido no se duerme.
  */
-/** Cuánto trabaja MobileMesh en segundo plano. Ver [ServicioFondo]. */
-enum class ModoFondo {
+/**
+ * How much MobileMesh works in the background. See [ServicioFondo].
+ *
+ * Cuánto trabaja MobileMesh en segundo plano. Ver [ServicioFondo].
+ */
+enum class BackgroundMode {
     /**
      * Servicio en primer plano + silencio + despertador: los mensajes llegan al
      * instante. Es el modo de siempre y el de las apps de mensajería.
@@ -161,7 +169,7 @@ enum class ModoFondo {
      * SCHEDULE_EXACT_ALARM y REQUEST_IGNORE_BATTERY_OPTIMIZATIONS. Google Play
      * restringe los tres y hay que justificarlos en la ficha.
      */
-    COMPLETO,
+    FULL,
 
     /**
      * Solo despertador: ni servicio ni notificación fija. Android despierta la
@@ -173,28 +181,48 @@ enum class ModoFondo {
      *
      * Es el punto medio para apps que quieren avisos sin pelearse con Play.
      */
-    DESPERTADOR,
+    ALARM,
 
     /**
      * Nada en segundo plano. Para apps que solo guardan datos en el propio
      * teléfono y no reciben nada de nadie. Leer y escribir sigue igual.
      */
-    NINGUNO,
+    NONE;
+
+    companion object {
+        @Deprecated("Use FULL", ReplaceWith("BackgroundMode.FULL"))
+        val COMPLETO: BackgroundMode get() = FULL
+
+        @Deprecated("Use ALARM", ReplaceWith("BackgroundMode.ALARM"))
+        val DESPERTADOR: BackgroundMode get() = ALARM
+
+        @Deprecated("Use NONE", ReplaceWith("BackgroundMode.NONE"))
+        val NINGUNO: BackgroundMode get() = NONE
+    }
 }
+
+@Deprecated("Use BackgroundMode")
+typealias ModoFondo = BackgroundMode
 
 /**
  * Cuánto trabaja MobileMesh cuando la app no está abierta.
  *
- * [ModoFondo.COMPLETO] por defecto, que es como se ha comportado siempre.
+ * [BackgroundMode.FULL] por defecto, que es como se ha comportado siempre.
  */
 object ServicioFondo {
     private fun prefs(c: Context) = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)
 
-    fun modo(c: Context): ModoFondo =
-        runCatching { ModoFondo.valueOf(prefs(c).getString("modo_fondo", null) ?: "") }.getOrDefault(ModoFondo.COMPLETO)
+    fun modo(c: Context): BackgroundMode =
+        when (val guardado = prefs(c).getString("modo_fondo", null)) {
+            // Valores guardados por versiones anteriores del SDK.
+            "COMPLETO" -> BackgroundMode.FULL
+            "DESPERTADOR" -> BackgroundMode.ALARM
+            "NINGUNO" -> BackgroundMode.NONE
+            else -> runCatching { BackgroundMode.valueOf(guardado ?: "") }.getOrDefault(BackgroundMode.FULL)
+        }
 
-    /** Llámalo antes de `MobileMesh.iniciar`. */
-    fun modo(c: Context, m: ModoFondo) = prefs(c).edit().putString("modo_fondo", m.name).apply()
+    /** Llámalo antes de `MobileMesh.start`. */
+    fun modo(c: Context, m: BackgroundMode) = prefs(c).edit().putString("modo_fondo", m.name).apply()
 }
 
 /**
@@ -210,7 +238,7 @@ object AvisoFijo {
 
     fun discreto(c: Context) = prefs(c).getBoolean("aviso_discreto", false)
 
-    /** Se aplica al arrancar el servicio: llámalo antes de `MobileMesh.iniciar`. */
+    /** Se aplica al arrancar el servicio: llámalo antes de `MobileMesh.start`. */
     fun discreto(c: Context, si: Boolean) = prefs(c).edit().putBoolean("aviso_discreto", si).apply()
 
     fun canal(c: Context) = if (discreto(c)) "conexion-discreta" else "conexion-visible"
@@ -281,7 +309,7 @@ object Avisos {
         // En la pantalla de bloqueo solo se ve que hay un mensaje, no de quién ni qué dice.
         val public = Notification.Builder(c, "mensajes")
             .setSmallIcon(android.R.drawable.stat_notify_chat)
-            .setContentTitle(Permisos.nombreApp(c))
+            .setContentTitle(Permissions.appName(c))
             .setContentText("Tienes un mensaje nuevo")
             .build()
         val n = Notification.Builder(c, "mensajes")

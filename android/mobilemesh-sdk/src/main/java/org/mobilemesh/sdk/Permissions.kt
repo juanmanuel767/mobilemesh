@@ -17,7 +17,7 @@ import android.provider.Settings
  * fabricante. Llamar en `onResume` de la pantalla principal: solo pregunta lo que falte, una vez por
  * cada vez que se abre la app.
  */
-object Permisos {
+object Permissions {
     private val preguntadoEnEstaSesion = mutableSetOf<String>()
 
     /** Pantallas de «inicio automático» de cada fabricante (no hay forma estándar en Android). */
@@ -32,9 +32,9 @@ object Permisos {
     )
 
     /** ¿Falta algo que se pueda comprobar? (El inicio automático no se puede comprobar.) */
-    fun faltan(c: Context): Boolean = !avisos(c) || !bateria(c) || !alarmas(c)
+    fun missing(c: Context): Boolean = !avisos(c) || !bateria(c) || !alarmas(c)
 
-    fun pedir(a: Activity) {
+    fun request(a: Activity) {
         when {
             !avisos(a) && preguntar("avisos") ->
                 a.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7801)
@@ -48,12 +48,12 @@ object Permisos {
                 a,
                 "Mensajes más rápidos",
                 "Para mirar si tienes mensajes cada pocos minutos aunque la pantalla esté apagada, " +
-                    "activa «Alarmas y recordatorios» para «${nombreApp(a)}» en la siguiente pantalla.",
+                    "activa «Alarmas y recordatorios» para «${appName(a)}» en la siguiente pantalla.",
             ) { a.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${a.packageName}"))) }
             !yaMostrado(a, "inicio") && preguntar("inicio") -> explicar(
                 a,
                 "Inicio automático",
-                "Tu teléfono cierra las apps para ahorrar batería. Busca «${nombreApp(a)}» en la " +
+                "Tu teléfono cierra las apps para ahorrar batería. Busca «${appName(a)}» en la " +
                     "siguiente pantalla y actívale el inicio automático (o «sin restricciones») para " +
                     "que reciba mensajes al instante.",
             ) {
@@ -77,7 +77,7 @@ object Permisos {
     private fun marcarMostrado(c: Context, clave: String) = prefs(c).edit().putBoolean("permiso_$clave", true).apply()
 
     /** Nombre de la app que usa MobileMesh (el que ve el usuario). */
-    internal fun nombreApp(c: Context) = c.applicationInfo.loadLabel(c.packageManager).toString()
+    internal fun appName(c: Context) = c.applicationInfo.loadLabel(c.packageManager).toString()
 
     private fun explicar(a: Activity, titulo: String, texto: String, alAceptar: () -> Unit) {
         if (a.isFinishing) return
@@ -97,4 +97,14 @@ object Permisos {
         // Fabricante desconocido: los ajustes de la app (batería, segundo plano).
         a.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${a.packageName}")))
     }
+}
+
+/** Alias en español, obsoleto. / Deprecated Spanish alias. */
+@Deprecated("Use Permissions")
+object Permisos {
+    @Deprecated("Use Permissions.missing", ReplaceWith("Permissions.missing(c)"))
+    fun faltan(c: Context): Boolean = Permissions.missing(c)
+
+    @Deprecated("Use Permissions.request", ReplaceWith("Permissions.request(a)"))
+    fun pedir(a: Activity) = Permissions.request(a)
 }
