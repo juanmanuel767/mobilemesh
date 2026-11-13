@@ -641,6 +641,17 @@ impl Store {
         })
     }
 
+    /// Comprueba a petición que ninguna página del archivo esté dañada. SQLCipher detecta el daño
+    /// (HMAC por página) solo al tocar esa página: sin esto una corrupción puede quedarse
+    /// oculta y los datos no están copiados en ningún servidor. Recorre toda la base, por eso NO se
+    /// hace al abrir. Vacío = sana; si no, un texto por problema. No repara nada: una base cifrada
+    /// dañada se restaura con la copia de recuperación o el guardián.
+    pub fn integrity_check(&self) -> Result<Vec<String>> {
+        let mut st = self.db.prepare("PRAGMA cipher_integrity_check")?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// Ejecuta `f` como un todo: o se guarda todo o nada.
     pub fn atomic<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
         self.db.execute_batch("BEGIN IMMEDIATE;")?;

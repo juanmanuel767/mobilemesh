@@ -867,6 +867,12 @@ impl Mesh {
         Ok(lines.join("\n"))
     }
 
+    /// Comprueba a petición si el archivo de la base está sano. Vacío = sana; si no, los problemas.
+    /// No repara: si falla, restaurar con la copia de recuperación o el guardián.
+    pub fn check_database(&self) -> R<Vec<String>> {
+        Ok(Store::open(&self.dir, self.me.db_key())?.integrity_check()?)
+    }
+
     /// Empieza a hacer de relé ligero para otros en `port` (la app decide cuándo: wifi y batería).
     /// Abre el puerto en el router (UPnP) y se apunta en el director cada minuto. Sin UPnP no se
     /// le puede llegar desde fuera: el director no lo dará a nadie. `true` si ya estaba o arrancó.

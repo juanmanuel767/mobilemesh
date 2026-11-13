@@ -289,6 +289,17 @@ internet del usuario, dilo en la política de privacidad de tu app y ofrécele a
   pendientes, cambios sin confirmar, copias.
 - `mesh.offlineMode(true)` simula no tener red.
 
+### Comprobar que la base está sana
+
+`mesh.checkDatabase()` devuelve una lista: vacía si la base está sana, o un texto por cada problema.
+
+- Sirve para detectar una corrupción del archivo (disco defectuoso, copia a medias) que de otro modo
+  puede pasar desapercibida: los datos no están copiados en ningún servidor.
+- Es a petición: no se ejecuta al abrir ni solo. Recorre toda la base, así que en una base grande
+  tarda; llámala, por ejemplo, desde una pantalla de ajustes o de vez en cuando, y fuera del hilo principal.
+- No repara nada: una base cifrada dañada no se arregla. Si devuelve problemas, ofrece al usuario
+  restaurar con la copia de recuperación (`recoverWithPaper`, `recover`) o con el guardián (`recoverWithGuardian`).
+
 ## Lo que todavía no hace
 
 - Archivos por el buzón: esperan a la entrega directa.

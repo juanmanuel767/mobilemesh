@@ -690,6 +690,17 @@ class MobileMesh private constructor(private val context: Context, val core: Mes
      */
     fun diagnostics(): String = wrap { core.diagnostics() }
 
+    /**
+     * Checks on request whether the database file is healthy. Returns an empty list if it is, or one
+     * text per problem found. It is not run automatically and it takes time on a large database. It
+     * does not repair anything: if it reports problems, restore with the recovery backup or the guardian.
+     *
+     * Comprueba a petición si el archivo de la base está sano. Devuelve una lista vacía si lo está, o un
+     * texto por cada problema. No se ejecuta solo y tarda en una base grande. No repara nada: si
+     * informa de problemas, restaura con la copia de recuperación o el guardián.
+     */
+    fun checkDatabase(): List<String> = wrap { core.checkDatabase() }
+
     @Deprecated("Use diagnostics()", ReplaceWith("diagnostics()"))
     fun diagnostico(): String = diagnostics()
 

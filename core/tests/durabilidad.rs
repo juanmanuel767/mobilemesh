@@ -280,3 +280,50 @@ fn base_alterada_falla_limpio_y_no_devuelve_basura() {
     drop(db);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn comprobacion_de_integridad_distingue_sana_de_danada() {
+    // Lo que se protege: que la app pueda preguntar «¿está sana mi base?» y que una
+    // corrupción que el almacén no tocó al abrir/leer igualmente se señale.
+    let (dir, id) = device("integridad");
+    let key = id.db_key();
+    {
+        let store = Store::open(&dir, key).unwrap();
+        for i in 0..300 {
+            store.save_incoming(PAR, &format!("reg-{i}"), &format!("texto-{i}-{}", "x".repeat(60))).unwrap();
+        }
+        // a) Sana: la comprobación no encuentra problemas.
+        let problemas = store.integrity_check().expect("la comprobación falló en una base sana");
+        assert!(problemas.is_empty(), "base sana señalada como dañada: {problemas:?}");
+    }
+    {
+        let db = open_con_clave(&dir, &key);
+        db.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(())).unwrap();
+    }
+    for s in ["-wal", "-shm"] {
+        let _ = std::fs::remove_file(dir.join(format!("mesh.db{s}")));
+    }
+
+    // b) Se sobrescriben 64 bytes a mitad del archivo.
+    let ruta = dir.join("mesh.db");
+    let mut bytes = std::fs::read(&ruta).unwrap();
+    assert!(bytes.len() > 16 * 4096, "la base es demasiado pequeña para el ensayo: {}", bytes.len());
+    let pos = bytes.len() / 2;
+    for b in &mut bytes[pos..pos + 64] {
+        *b = !*b;
+    }
+    std::fs::write(&ruta, &bytes).unwrap();
+
+    // Debe señalar el daño: con problemas listados o con un error claro, nunca «sana».
+    match Store::open(&dir, key) {
+        Err(e) => println!("al abrir: error limpio: {e}"),
+        Ok(store) => match store.integrity_check() {
+            Err(e) => println!("integrity_check: error limpio: {e}"),
+            Ok(problemas) => {
+                println!("integrity_check: {problemas:?}");
+                assert!(!problemas.is_empty(), "la base alterada se dio por sana");
+            }
+        },
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
