@@ -75,7 +75,7 @@ mesh.actAsSupernode(false)  // encendido por defecto; así se apaga si el usuari
 ### React Native (Android)
 
 ```sh
-npm install github:juanmanuel767/mobilemesh#v0.2.0
+npm install github:juanmanuel767/mobilemesh#v0.2.1
 ```
 
 ```js
@@ -99,7 +99,7 @@ En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
 ```kotlin
 dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
 
-dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.2.0") }
+dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.2.1") }
 ```
 
 Requisitos: `compileSdk` 35 o superior · `minSdk` 28 · JDK 17
