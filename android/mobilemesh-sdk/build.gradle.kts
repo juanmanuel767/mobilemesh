@@ -8,8 +8,8 @@ android {
 
     defaultConfig {
         minSdk = 28 // setUnlockedDeviceRequired de Keystore
-        // ponytail: solo arm64 (casi todos los móviles actuales); añadir armeabi-v7a si hace falta.
-        ndk { abiFilters += "arm64-v8a" }
+        // ponytail: arm64 (móviles actuales) y x86_64 (emulador); añadir armeabi-v7a si hace falta.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         // Viajan dentro del .aar: así R8 no renombra las clases que JNA busca
         // por nombre y las apps funcionan en release sin configurar nada.
         consumerProguardFiles("consumer-rules.pro")
