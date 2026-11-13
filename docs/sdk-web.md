@@ -38,7 +38,7 @@ Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-Sin ellas `MobileMesh.iniciar()` lanza un error (`crossOriginIsolated` es falso). Con
+Sin ellas `MobileMesh.start()` lanza un error (`crossOriginIsolated` es falso). Con
 `require-corp`, todo recurso de otro origen (imágenes, scripts, fuentes) debe enviar
 `Cross-Origin-Resource-Policy: cross-origin` o cargarse con CORS.
 
@@ -95,23 +95,25 @@ En Apache: `Header always set Cross-Origin-Opener-Policy "same-origin"` y
 ```js
 import { MobileMesh } from "mobilemesh";   // sin npm: "./mobilemesh.js"
 
-const mesh = await MobileMesh.iniciar();
-console.log("mi cuenta:", await mesh.cuenta());
+const mesh = await MobileMesh.start();
+console.log("mi cuenta:", await mesh.account());
 
 // Datos (cifrados y permanentes en este navegador)
-await mesh.guardar("tareas", "t1", "titulo", "Comprar pan");
-console.log(await mesh.datos("tareas"));   // [{id: "t1", campos: {titulo: "Comprar pan"}}]
+await mesh.save("tareas", "t1", "titulo", "Comprar pan");
+console.log(await mesh.all("tareas"));   // [{id: "t1", campos: {titulo: "Comprar pan"}}]
 
 // Contactos y mensajes
-const miInvitacion = await mesh.invitacion();     // compártela (QR, enlace…)
-await mesh.anadirContacto("ana", invitacionDeAna);
-await mesh.enviar("ana", "hola");                 // "entregado" | "en buzón" | "pendiente: …"
-mesh.recibir(async (n) => console.log(await mesh.mensajes()));
+const miInvitacion = await mesh.invitation();     // compártela (QR, enlace…)
+await mesh.addContact("ana", invitacionDeAna);
+await mesh.sendMessage("ana", "hola");                 // "entregado" | "en buzón" | "pendiente: …"
+mesh.onReceive(async (n) => console.log(await mesh.messages()));
 
 // Colecciones compartidas con permisos
-await mesh.darPermiso("tareas", "ana", "escribir"); // "leer" | "escribir" | "nada"
-await mesh.sincronizar("ana");
+await mesh.shareWith("tareas", "ana", "write"); // "read" | "write" | "none"
+await mesh.syncWith("ana");
 ```
+
+La API está en inglés. Los nombres en español (`iniciar`, `guardar`, `datos`, `enviar`…) siguen funcionando, pero avisan una vez por consola de que están obsoletos. Los permisos también aceptan `"leer"`, `"escribir"` y `"nada"`.
 
 ## 4. Diferencias con Android
 

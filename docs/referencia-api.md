@@ -179,19 +179,19 @@ Archivo `web/mobilemesh.js`; se importa como módulo (`import { MobileMesh } fro
 
 | Método | Qué hace |
 |---|---|
-| `static async iniciar()` | _(sin comentario)_ |
-| `cuenta()` | Identificador de la cuenta de este navegador (se crea la primera vez y se guarda). |
-| `guardar(coleccion, registro, campo, valor)` | Guarda un campo de un registro de una colección (cifrado y permanente). |
-| `async datos(coleccion)` | Registros de una colección: [{id, campos: {…}}]. |
-| `invitacion()` | Mi invitación (para que otro me añada como contacto). |
-| `anadirContacto(nombre, invitacion)` | _(sin comentario)_ |
-| `enviar(nombre, texto)` | Envía un texto. |
-| `async mensajes()` | Todos los mensajes: [{contacto, saliente, texto, estado}]. |
-| `recibir(alNuevo)` | Empieza a recibir (por el relé) mientras la página esté abierta. |
-| `darPermiso(coleccion, contacto, permiso)` | Comparte una colección con un contacto: "leer", "escribir" o "nada" (quitar). |
-| `sincronizar(contacto)` | Sincroniza con un contacto las colecciones compartidas. |
-| `quien(rele)` | Mi IP pública según un relé («host:puerto»). |
-| `async directorio(rele)` | Directorio firmado de relés y guardianes que sirve un relé (comprobada la firma). |
+| `static async start()` | Starts MobileMesh in this page: loads the core in a worker and connects the network. |
+| `account()` | Identifier of this browser's account (created the first time and kept). |
+| `save(collection, record, field, value)` | Saves one field of a record in a collection (encrypted and permanent). |
+| `async all(collection)` | Records of a collection: [{id, campos: {…}}]. |
+| `invitation()` | My invitation (so another person can add me as a contact). |
+| `addContact(name, invitation)` | Adds a contact under a name, using the invitation they shared. |
+| `sendMessage(name, text)` | Sends a text. |
+| `async messages()` | All messages: [{contacto, saliente, texto, estado}]. |
+| `onReceive(callback)` | Starts receiving (through the relay) while the page is open. |
+| `async shareWith(collection, contact, permission)` | Shares a collection with a contact: "read", "write" or "none" (revoke). |
+| `syncWith(contact)` | Syncs the shared collections with a contact. |
+| `publicAddress(relay)` | My public IP as seen by a relay ("host:port"). |
+| `async directory(relay)` | Signed directory of relays and guardians served by a relay (signature checked). |
 
 ## React Native
 
