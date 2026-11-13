@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "org.mobilemesh.sdk"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 28 // setUnlockedDeviceRequired de Keystore

@@ -19,15 +19,23 @@ Ya compilado, con el núcleo en Rust dentro. Funciona en móviles reales (`arm64
 
 La API está en inglés (`start`, `collection`, `save`, `subscribe`…). Los nombres en español siguen funcionando como alias obsoletos (`@Deprecated`): el código que ya los usaba compila igual, solo verás avisos.
 
-`minSdk` 28. La librería añade sola sus permisos (red, avisos, segundo plano).
+Requisitos: `compileSdk` 35 o superior · `minSdk` 28 · JDK 17
+
+La librería añade sola sus permisos (red, avisos, segundo plano). Todos los tipos de esta guía (`MobileMesh`, `BackgroundMode`, `Permissions`, `MeshCollection`, `Document`, `Message`, `AccountState`, `MobileMeshError`…) viven en el paquete `org.mobilemesh.sdk`.
 
 ## 1. Empezar
 
 ```kotlin
+import org.mobilemesh.sdk.MobileMesh
+
 val mesh = MobileMesh.start(context, port = 7811) // crea la cuenta la primera vez
 ```
 
-- Cada app del mismo teléfono debe usar un `port` distinto.
+El puerto es opcional: `start(context)` usa el de por defecto. Solo hace falta darlo cuando dos apps del mismo teléfono usan MobileMesh a la vez.
+
+En Android la cuenta se crea sola con `start`; no hay `registrar(usuario, contraseña)` como en React Native. El nombre de usuario es aparte: `registerName` (sección 3).
+
+- Si dos apps del mismo teléfono usan MobileMesh, cada una debe usar un `port` distinto.
 - Si el teléfono está bloqueado lanza `MobileMeshError` (la cuenta solo se abre desbloqueado);
   consúltalo antes con `MobileMesh.state(context)`.
 - MobileMesh queda recibiendo en segundo plano (servicio con notificación fija).
@@ -69,6 +77,8 @@ orders.delete("p1")
 val parar = orders.subscribe { docs -> show(docs) } // tiempo real
 parar()                                                // dejar de escuchar
 ```
+
+`Document.fields` es un `Map<String, Any?>`, así que hay que convertir el valor al tipo que guardaste (por ejemplo `as? Int`). Un `Document` también trae `id` y `conflicts`.
 
 Consultas: filtrar, ordenar y limitar (también en tiempo real):
 
@@ -199,7 +209,7 @@ por el despertador; al cargar vuelve.
 ### Avisos al instante con Firebase (opcional)
 
 Algunos teléfonos (TECNO, ZTE…) congelan las apps y solo dejan despertarlas al instante a Google.
-Si lo necesitas, añade la pieza opcional `mobilemesh-avisos-fcm`. Google solo lleva «tienes algo»;
+Si lo necesitas, añade la pieza opcional `mobilemesh-avisos-fcm`. Todavía no se publica en JitPack: hoy requiere clonar el repositorio y compilarla. Google solo lleva «tienes algo»;
 el mensaje sigue cifrado en tu relé.
 
 ```kotlin
@@ -277,9 +287,8 @@ internet del usuario, dilo en la política de privacidad de tu app y ofrécele a
 
 ## Lo que todavía no hace
 
-- Avisos instantáneos con la pantalla apagada (llegan en el siguiente despertar, ver sección 5).
 - Archivos por el buzón: esperan a la entrega directa.
-- iPhone y navegador (el núcleo en Rust ya está preparado para ello).
+- iPhone. El navegador ya está disponible: ver [SDK web](sdk-web.md).
 - Buscar entre datos de distintos usuarios (no hay ningún sitio con los datos de todos: es la idea).
 
 ## Compilar desde el código fuente
