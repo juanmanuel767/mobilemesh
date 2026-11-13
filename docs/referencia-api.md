@@ -4,7 +4,7 @@
 > Para regenerarlo: `python3 tools/generar-referencia.py`
 > Si cambias una función, vuelve a ejecutar el script; los cambios manuales se pierden.
 
-Resumen: Android (funciones y propiedades): 66 · Web (métodos): 13 · React Native (métodos): 38 · CLI mesh (órdenes): 40 · MCP (herramientas): 8.
+Resumen: Android (funciones y propiedades): 66 · Web (métodos): 13 · React Native (métodos): 39 · CLI mesh (órdenes): 40 · MCP (herramientas): 8.
 
 Los nombres de Android van en inglés (es la API). En web, React Native, CLI y MCP los nombres son en español, tal como están en el código.
 
@@ -199,44 +199,45 @@ Se usa como `MobileMesh.<método>` tras `import { MobileMesh } from "mobilemesh"
 
 | Método | Qué hace |
 |---|---|
-| `estadoCuenta()` | "sin cuenta" \| "bloqueado" \| "lista" |
-| `iniciar()` | Abre (o crea la primera vez) la cuenta de este móvil y pide los permisos de avisos. |
-| `registrar(usuario, contrasena)` | Tras `iniciar`: registra el usuario (y guarda la cuenta en el guardián). |
-| `entrar(usuario, contrasena)` | En un móvil nuevo, en lugar de `iniciar`: recupera la cuenta con usuario y contraseña. |
-| `miUsuario()` | _(sin comentario)_ |
-| `codigoPapel()` | Código en papel (56 letras): enséñalo para apuntarlo; recupera la cuenta sin contraseña. |
-| `entrarConCodigo(usuario, codigo, nuevaContrasena)` | Contraseña olvidada: entra con el código en papel y elige una contraseña nueva. |
-| `existeUsuario(usuario)` | _(sin comentario)_ |
-| `protegida()` | ¿Se puede recuperar la cuenta al formatear? |
-| `proteger(contrasena)` | Protege la cuenta si al registrarse no se pudo. |
-| `anadirPorNombre(usuario)` | Añade a alguien por su nombre de usuario; su app te añadirá sola. |
-| `aceptarSolicitudes()` | Acepta a quienes quieren hablar contigo. |
-| `actualizar()` | Actualiza tu invitación en la guía y acepta solicitudes. |
-| `usarGuiaDeNombres(invitacion)` | _(sin comentario)_ |
-| `invitacion()` | Texto para que otro te añada (compártelo o ponlo en un QR). |
-| `anadirContacto(nombre, invitacion)` | _(sin comentario)_ |
-| `contactos()` | _(sin comentario)_ |
-| `enviar(contacto, texto)` | Envía un texto. |
-| `async mensajes()` | [{id, contacto, enviado, texto, estado, progreso, archivo, tipo, tamano, disponible}] |
-| `alRecibir(alNuevo)` | Avisa con `alNuevo(n)` cada vez que llega algo. |
-| `elegirArchivo()` | Selector de archivos de Android: {uri, nombre} o null. |
-| `enviarArchivo(contacto, uri, nombre)` | _(sin comentario)_ |
-| `verArchivo(id)` | Ruta file:// descifrada en la caché (para <Image>). |
-| `guardarEnDescargas(id)` | _(sin comentario)_ |
-| `async llamar(ayudante, funcion, datos = {})` | Llama a una función de servidor de un ayudante (añádelo antes con `anadirPorNombre`). |
-| `async pagar(producto, { ayudante = "pagos", esperarMin = 10 } = {})` | Cobrar con un ayudante de pagos (examples/ayudante-pagos): crea el pago, abre la pasarela, vuelve sola a la app al terminar y espera el resultado. |
-| `guardar(coleccion, id, campos)` | Base de datos cifrada en el móvil. |
-| `async datos(coleccion)` | _(sin comentario)_ |
-| `borrar(coleccion, id)` | _(sin comentario)_ |
-| `publicar(coleccion, id, campos)` | Colecciones públicas: lo que la app publica a propósito para que lo vean todos (ranking, catálogo). |
-| `borrarPublicado(coleccion, id)` | _(sin comentario)_ |
-| `async consultarPublico(coleccion, opciones = {})` | opciones: { donde: [["puntos", ">", 100]], orden: "puntos", desc: true, limite: 10 } |
-| `usarRele(direccion)` | _(sin comentario)_ |
-| `hacerDeSupernodo(activo)` | Ayudar a otros: este móvil hace de relé solo en wifi y con batería ≥15 % (encendido por defecto; `false` lo apaga). |
-| `esSupernodo()` | _(sin comentario)_ |
-| `recepcionInstantanea(activa)` | Avisos al instante con la pantalla apagada y sin Google (encendido por defecto; se pausa por debajo del 15 % de batería). |
-| `diagnostico()` | _(sin comentario)_ |
-| `function formatearCodigo(texto)` (también como `MobileMesh.formatearCodigo`) | Para el campo donde se escribe el código en papel: mientras se teclea lo deja en grupos de 4 («2Y3Q-7KM9-…»), en mayúsculas, sin letras que no existen en el código y como mucho 56 letras. |
+| `state()` | "sin cuenta" \| "bloqueado" \| "lista" |
+| `start()` | Abre (o crea la primera vez) la cuenta de este móvil y pide los permisos de avisos. |
+| `register(username, password)` | Tras `start`: registra el usuario (y guarda la cuenta en el guardián). |
+| `signIn(username, password)` | En un móvil nuevo, en lugar de `start`: recupera la cuenta con usuario y contraseña. |
+| `myUsername()` | _(sin comentario)_ |
+| `paperCode()` | Código en papel (56 letras): enséñalo para apuntarlo; recupera la cuenta sin contraseña. |
+| `recoverWithPaper(username, code, newPassword)` | Contraseña olvidada: entra con el código en papel y elige una contraseña nueva. |
+| `userExists(username)` | _(sin comentario)_ |
+| `isProtected()` | ¿Se puede recuperar la cuenta al formatear? |
+| `protectWithGuardian(password)` | Protege la cuenta si al registrarse no se pudo. |
+| `addByName(username)` | Añade a alguien por su nombre de usuario; su app te añadirá sola. |
+| `acceptRequests()` | Acepta a quienes quieren hablar contigo. |
+| `refresh()` | Actualiza tu invitación en la guía y acepta solicitudes. |
+| `useNameGuide(invitation)` | _(sin comentario)_ |
+| `invitation()` | Texto para que otro te añada (compártelo o ponlo en un QR). |
+| `addContact(name, invitation)` | _(sin comentario)_ |
+| `contacts()` | _(sin comentario)_ |
+| `sendMessage(contact, text)` | Envía un texto. |
+| `async messages()` | [{id, contacto, enviado, texto, estado, progreso, archivo, tipo, tamano, disponible}] |
+| `onReceive(callback)` | Avisa con `callback(n)` cada vez que llega algo. |
+| `pickFile()` | Selector de archivos de Android: {uri, nombre} o null. |
+| `sendFile(contact, uri, name)` | _(sin comentario)_ |
+| `viewFile(id)` | Ruta file:// descifrada en la caché (para <Image>). |
+| `saveToDownloads(id)` | _(sin comentario)_ |
+| `async call(helper, fn, data = {})` | Llama a una función de servidor de un ayudante (añádelo antes con `addByName`). |
+| `async pay(producto, { ayudante = "pagos", esperarMin = 10 } = {})` | Cobrar con un ayudante de pagos (examples/ayudante-pagos): crea el pago, abre la pasarela, vuelve sola a la app al terminar y espera el resultado. |
+| `save(collection, id, fields)` | Base de datos cifrada en el móvil. |
+| `async all(collection)` | _(sin comentario)_ |
+| `delete(collection, id)` | _(sin comentario)_ |
+| `publish(collection, id, fields)` | Colecciones públicas: lo que la app publica a propósito para que lo vean todos (ranking, catálogo). |
+| `deletePublished(collection, id)` | _(sin comentario)_ |
+| `async queryPublic(collection, options = {})` | options: { donde: [["puntos", ">", 100]], orden: "puntos", desc: true, limite: 10 } |
+| `useRelay(address)` | _(sin comentario)_ |
+| `actAsSupernode(enabled)` | Ayudar a otros: este móvil hace de relé solo en wifi y con batería ≥15 % (encendido por defecto; `false` lo apaga). |
+| `isSupernode()` | _(sin comentario)_ |
+| `instantReception(enabled)` | Avisos al instante con la pantalla apagada y sin Google (encendido por defecto; se pausa por debajo del 15 % de batería). |
+| `diagnostics()` | _(sin comentario)_ |
+| `function formatCode(texto)` (también como `MobileMesh.formatCode`) | Para el campo donde se escribe el código en papel: mientras se teclea lo deja en grupos de 4 («2Y3Q-7KM9-…»), en mayúsculas, sin letras que no existen en el código y como mucho 56 letras. |
+| `function formatearCodigo(texto)` (también como `MobileMesh.formatearCodigo`) | _(sin comentario)_ |
 
 ## Línea de órdenes `mesh`
 

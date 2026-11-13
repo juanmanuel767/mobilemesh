@@ -17,54 +17,56 @@ El puente baja solo el SDK de Android desde JitPack.
 import MobileMesh from "react-native-mobilemesh";
 
 // Primera vez: crear la cuenta con usuario y contraseña (la contraseña recupera la cuenta en otro móvil)
-await MobileMesh.iniciar();
-await MobileMesh.registrar("ana", "contraseña-larga-12");
+await MobileMesh.start();
+await MobileMesh.register("ana", "contraseña-larga-12");
 // En un móvil nuevo, en lugar de lo anterior:
-await MobileMesh.entrar("ana", "contraseña-larga-12");
+await MobileMesh.signIn("ana", "contraseña-larga-12");
 
 // Código en papel (56 letras): enséñalo al crear la cuenta para que lo apunten
-const codigo = await MobileMesh.codigoPapel();
+const codigo = await MobileMesh.paperCode();
 // Contraseña olvidada: entrar con el código y elegir una contraseña nueva
-await MobileMesh.entrarConCodigo("ana", codigo, "contraseña-nueva-12");
+await MobileMesh.recoverWithPaper("ana", codigo, "contraseña-nueva-12");
 // ¿Se puede recuperar al formatear? Si no (sin red al registrarse), protegerla:
-if (!(await MobileMesh.protegida())) await MobileMesh.proteger("contraseña-larga-12");
+if (!(await MobileMesh.isProtected())) await MobileMesh.protectWithGuardian("contraseña-larga-12");
 
 // Hablar con alguien por su nombre (su app te añade sola)
-await MobileMesh.anadirPorNombre("juan");
-await MobileMesh.enviar("juan", "hola");            // «entregado» | «en buzón»
-MobileMesh.alRecibir(async () => console.log(await MobileMesh.mensajes()));
-setInterval(() => MobileMesh.actualizar(), 15000);   // solicitudes nuevas y direcciones al día
+await MobileMesh.addByName("juan");
+await MobileMesh.sendMessage("juan", "hola");            // «entregado» | «en buzón»
+MobileMesh.onReceive(async () => console.log(await MobileMesh.messages()));
+setInterval(() => MobileMesh.refresh(), 15000);   // solicitudes nuevas y direcciones al día
 
 // Archivos, fotos y documentos
-const f = await MobileMesh.elegirArchivo();           // selector de Android
-if (f) await MobileMesh.enviarArchivo("juan", f.uri, f.nombre);
-const ruta = await MobileMesh.verArchivo(idMensaje);  // file:// para <Image>
-await MobileMesh.guardarEnDescargas(idMensaje);
+const f = await MobileMesh.pickFile();           // selector de Android
+if (f) await MobileMesh.sendFile("juan", f.uri, f.nombre);
+const ruta = await MobileMesh.viewFile(idMensaje);  // file:// para <Image>
+await MobileMesh.saveToDownloads(idMensaje);
 
 // Cobrar (con un ayudante de pagos, ver examples/ayudante-pagos): abre la pasarela, vuelve sola a
 // la app y espera el resultado. La app no tiene que declarar nada en Android.
-const { estado } = await MobileMesh.pagar("cafe");   // "APROBADO" | "RECHAZADO" | …
+const { estado } = await MobileMesh.pay("cafe");   // "APROBADO" | "RECHAZADO" | …
 
 // Base de datos cifrada en el móvil
-await MobileMesh.guardar("tareas", "t1", { titulo: "Comprar pan" });
-console.log(await MobileMesh.datos("tareas"));       // [{id: "t1", campos: {titulo: "Comprar pan"}}]
+await MobileMesh.save("tareas", "t1", { titulo: "Comprar pan" });
+console.log(await MobileMesh.all("tareas"));       // [{id: "t1", campos: {titulo: "Comprar pan"}}]
 
 // Colección pública: lo que la app publica para que lo vean todos (ranking, catálogo)
-await MobileMesh.publicar("ranking", "ana", { nombre: "Ana", puntos: 120 });
-const top = await MobileMesh.consultarPublico("ranking", { orden: "puntos", desc: true, limite: 10 });
+await MobileMesh.publish("ranking", "ana", { nombre: "Ana", puntos: 120 });
+const top = await MobileMesh.queryPublic("ranking", { orden: "puntos", desc: true, limite: 10 });
 // [{id: "beto", autor: "<cuenta>", campos: {nombre: "Beto", puntos: 300}}, …]
 ```
+
+Los nombres en español (`guardar`, `iniciar`, `enviar`…) siguen funcionando, pero avisan una vez por consola: usa los ingleses, que son los mismos que en Android y en la web.
 
 Los avisos de mensajes nuevos funcionan con la app cerrada (servicio propio, sin Google).
 
 La copia cifrada de la cuenta (contactos, mensajes y datos) se actualiza sola en el guardián un
-minuto después de cada cambio: al formatear, «entrar» o «entrarConCodigo» la recuperan.
+minuto después de cada cambio: al formatear, `signIn` o `recoverWithPaper` la recuperan.
 
 ## Probado
 
 - TECNO KJ5 ⇄ Redmi A5 con la app de ejemplo ChatMesh: cuentas por nombre, solicitudes aceptadas
   solas, mensajes en los dos sentidos (misma wifi y redes distintas), fotos y avisos.
-- Pago con Wompi (modo de pruebas) con `pagar()`: la pasarela aprueba y la app muestra «Pagado».
+- Pago con Wompi (modo de pruebas) con `pay()`: la pasarela aprueba y la app muestra «Pagado».
 - Redmi formateado (datos borrados): recuperados cuenta, contacto y mensajes con contraseña y con
   el código en papel.
 
