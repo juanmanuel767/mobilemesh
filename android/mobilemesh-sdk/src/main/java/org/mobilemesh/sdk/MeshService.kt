@@ -133,11 +133,15 @@ class MeshService : Service() {
 
     companion object {
         fun start(c: Context) {
-            // Una app puede pedir funcionar sin servicio en segundo plano. Se
-            // comprueba aquí y no en cada sitio que llama para que no se escape
-            // ninguno.
-            if (!ServicioFondo.activo(c)) return
-            c.startForegroundService(Intent(c, MeshService::class.java))
+            // Se decide aquí y no en cada sitio que llama, para que no se escape
+            // ninguno de los cuatro.
+            when (ServicioFondo.modo(c)) {
+                ModoFondo.COMPLETO -> c.startForegroundService(Intent(c, MeshService::class.java))
+                // Sin servicio, pero el despertador sigue mirando el buzón: los
+                // avisos llegan igual, con unos minutos de retraso.
+                ModoFondo.DESPERTADOR -> Despertador.programar(c)
+                ModoFondo.NINGUNO -> Unit
+            }
         }
     }
 }
@@ -147,26 +151,50 @@ class MeshService : Service() {
  * fabricantes no congelan una app que suena, así que la conexión sigue viva con la pantalla apagada
  * (medido en un TECNO: mensaje entregado en 1 s). Cuesta batería: el chip de sonido no se duerme.
  */
+/** Cuánto trabaja MobileMesh en segundo plano. Ver [ServicioFondo]. */
+enum class ModoFondo {
+    /**
+     * Servicio en primer plano + silencio + despertador: los mensajes llegan al
+     * instante. Es el modo de siempre y el de las apps de mensajería.
+     *
+     * Pide FOREGROUND_SERVICE_REMOTE_MESSAGING y, para despertar con precisión,
+     * SCHEDULE_EXACT_ALARM y REQUEST_IGNORE_BATTERY_OPTIMIZATIONS. Google Play
+     * restringe los tres y hay que justificarlos en la ficha.
+     */
+    COMPLETO,
+
+    /**
+     * Solo despertador: ni servicio ni notificación fija. Android despierta la
+     * app cada pocos minutos, mira el buzón del relé y avisa.
+     *
+     * No necesita ninguno de los permisos restringidos: sin
+     * SCHEDULE_EXACT_ALARM el despertador usa la alarma flexible, que también
+     * despierta en reposo, solo que Android la retrasa algo más.
+     *
+     * Es el punto medio para apps que quieren avisos sin pelearse con Play.
+     */
+    DESPERTADOR,
+
+    /**
+     * Nada en segundo plano. Para apps que solo guardan datos en el propio
+     * teléfono y no reciben nada de nadie. Leer y escribir sigue igual.
+     */
+    NINGUNO,
+}
+
 /**
- * Si MobileMesh mantiene un servicio en segundo plano.
+ * Cuánto trabaja MobileMesh cuando la app no está abierta.
  *
- * Encendido por defecto: es lo que permite recibir mensajes al instante y
- * sincronizar sola la app aunque esté cerrada.
- *
- * Una app que solo guarde datos en el propio teléfono y no use mensajería puede
- * apagarlo: así desaparece la notificación permanente y deja de necesitar los
- * permisos FOREGROUND_SERVICE_REMOTE_MESSAGING, SCHEDULE_EXACT_ALARM y
- * REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, que Google Play restringe y rechaza si
- * la app no los justifica. Lo que se pierde es la recepción instantánea y la
- * sincronización en segundo plano; leer y escribir datos sigue igual.
+ * [ModoFondo.COMPLETO] por defecto, que es como se ha comportado siempre.
  */
 object ServicioFondo {
     private fun prefs(c: Context) = c.getSharedPreferences("mobilemesh", Context.MODE_PRIVATE)
 
-    fun activo(c: Context) = prefs(c).getBoolean("servicio_fondo", true)
+    fun modo(c: Context): ModoFondo =
+        runCatching { ModoFondo.valueOf(prefs(c).getString("modo_fondo", null) ?: "") }.getOrDefault(ModoFondo.COMPLETO)
 
     /** Llámalo antes de `MobileMesh.iniciar`. */
-    fun activo(c: Context, si: Boolean) = prefs(c).edit().putBoolean("servicio_fondo", si).apply()
+    fun modo(c: Context, m: ModoFondo) = prefs(c).edit().putString("modo_fondo", m.name).apply()
 }
 
 /**

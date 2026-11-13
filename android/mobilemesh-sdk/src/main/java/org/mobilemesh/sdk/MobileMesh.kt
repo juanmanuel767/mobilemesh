@@ -83,18 +83,18 @@ class MobileMesh private constructor(private val context: Context, val nucleo: M
         fun avisoDiscreto(context: Context, activo: Boolean) = AvisoFijo.discreto(context.applicationContext, activo)
 
         /**
-         * Enciende o apaga el servicio en segundo plano. Encendido por defecto.
+         * Cuánto trabaja MobileMesh con la app cerrada. [ModoFondo.COMPLETO]
+         * por defecto, que es como se ha comportado siempre.
          *
-         * Apagarlo quita la notificación permanente y los permisos que Google
-         * Play restringe (mensajería en primer plano, alarmas exactas, saltarse
-         * el ahorro de batería), a cambio de perder la recepción instantánea y
-         * la sincronización con la app cerrada. Para apps que solo guardan datos
-         * en el propio teléfono.
+         * - [ModoFondo.COMPLETO]: mensajes al instante. Pide los permisos que
+         *   Google Play restringe y hay que justificarlos.
+         * - [ModoFondo.DESPERTADOR]: avisos cada pocos minutos, sin
+         *   notificación fija ni permisos restringidos.
+         * - [ModoFondo.NINGUNO]: nada en segundo plano.
          *
          * Llámalo ANTES de [iniciar].
          */
-        fun servicioEnSegundoPlano(context: Context, activo: Boolean) =
-            ServicioFondo.activo(context.applicationContext, activo)
+        fun modoFondo(context: Context, modo: ModoFondo) = ServicioFondo.modo(context.applicationContext, modo)
 
         fun estado(context: Context): EstadoCuenta {
             val guard = KeystoreGuard(context.applicationContext)
