@@ -17,3 +17,6 @@ android/rele-movil/build/
 android/rele-movil/src/main/jniLibs/
 servidor/target/
 react-native/android/.gradle/
+# Claves de los ayudantes: nunca en git (las leen con MM_CLAVES)
+claves.env
+*.env
