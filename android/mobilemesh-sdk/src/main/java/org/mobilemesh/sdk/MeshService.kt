@@ -222,7 +222,12 @@ object ServicioFondo {
         }
 
     /** Llámalo antes de `MobileMesh.start`. */
-    fun modo(c: Context, m: BackgroundMode) = prefs(c).edit().putString("modo_fondo", m.name).apply()
+    fun modo(c: Context, m: BackgroundMode) {
+        prefs(c).edit().putString("modo_fondo", m.name).apply()
+        // Salir del modo despertador tiene que parar la alarma ya programada: guardar la
+        // preferencia no la cancela, y Android la seguiría disparando.
+        if (m != BackgroundMode.ALARM) Despertador.cancelar(c.applicationContext)
+    }
 }
 
 /**
@@ -342,6 +347,12 @@ object Despertador {
         programar(c)
     }
 
+    /** Para el despertador. Sin esto, una alarma ya programada sigue viva para siempre. */
+    fun cancelar(c: Context) {
+        val pi = PendingIntent.getBroadcast(c, 1, Intent(c, DespertadorReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        c.getSystemService(AlarmManager::class.java).cancel(pi)
+    }
+
     fun programar(c: Context) {
         val am = c.getSystemService(AlarmManager::class.java)
         val pi = PendingIntent.getBroadcast(c, 1, Intent(c, DespertadorReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -359,6 +370,14 @@ object Despertador {
 class DespertadorReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         val app = c.applicationContext
+        // Solo sigue despertando si la app pidió el modo despertador. Antes se reprogramaba
+        // siempre, así que una app que pasaba a NONE seguía despertando y avisando para
+        // siempre: justo lo contrario de lo que pedía (comprobado en un Redmi, despertó a
+        // los 4 min 37 s con la app muerta y en modo NONE).
+        if (ServicioFondo.modo(app) != BackgroundMode.ALARM) {
+            Despertador.cancelar(app)
+            return
+        }
         android.util.Log.i("MobileMesh", "despertador: mirando el buzón")
         Despertador.programar(app)
         val pendiente = goAsync() // Android da unos segundos para terminar
