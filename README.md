@@ -198,6 +198,7 @@ flowchart LR
 | Android | [docs/sdk.md](docs/sdk.md) · [`examples/notas`](examples/notas) |
 | Web | [docs/sdk-web.md](docs/sdk-web.md) |
 | Referencia de funciones (generada del código) | [docs/referencia-api.md](docs/referencia-api.md) |
+| Mapa del proyecto: dónde está cada cosa (generado del código) | [docs/mapa.md](docs/mapa.md) |
 | Pagos | [`examples/ayudante-pagos`](examples/ayudante-pagos) |
 | IA (Claude, ChatGPT…) | [servidor MCP](docs/mcp.md) |
 | Protocolo y seguridad | [protocolo](docs/protocolo.md) · [reglas y amenazas](docs/fase-0.md) · [dependencias y licencias](docs/dependencias.md) |

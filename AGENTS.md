@@ -54,6 +54,7 @@ Elige el modo **antes** de `start`: `MobileMesh.backgroundMode(context, Backgrou
 
 ## Dónde mirar
 - `docs/referencia-api.md`: lista completa de funciones (generada del código).
+- `docs/mapa.md`: mapa de dónde está cada archivo y para qué sirve (generado del código).
 - `docs/sdk.md`: guía de Android · `docs/sdk-web.md`: web · `docs/react-native.md`: React Native.
 - `docs/mcp.md`: usar MobileMesh desde una IA por MCP · `docs/protocolo.md`: protocolo.
 
