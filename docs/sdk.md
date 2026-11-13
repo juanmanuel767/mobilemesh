@@ -35,6 +35,27 @@ val mesh = MobileMesh.start(context, port = 7811) // crea la cuenta la primera v
   por uno los avisos, la batería sin restricciones y el inicio automático del fabricante (TECNO,
   Xiaomi, Huawei, Oppo, Vivo, ZTE, Samsung). Solo pregunta lo que falte.
 
+### Cuánto trabaja con la app cerrada
+
+Elige el modo **antes** de `start`. Por defecto es `FULL`, que es como se ha comportado siempre.
+
+```kotlin
+MobileMesh.backgroundMode(this, BackgroundMode.ALARM)   // antes de start()
+val mesh = MobileMesh.start(this)
+```
+
+| Modo | Qué hace | Qué cuesta |
+|---|---|---|
+| `FULL` | Mensajes al instante, sincroniza con la app cerrada | Notificación fija y tres permisos que Google Play restringe: `FOREGROUND_SERVICE_REMOTE_MESSAGING`, `SCHEDULE_EXACT_ALARM` y `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`. Hay que justificarlos en la ficha de Play |
+| `ALARM` | Android despierta la app cada pocos minutos, mira el buzón del relé y avisa | Ningún permiso restringido y ninguna notificación fija. Los avisos llegan con unos minutos de retraso |
+| `NONE` | Nada en segundo plano. Leer y escribir datos sigue igual | No recibe nada con la app cerrada |
+
+Si tu app no es de mensajería, `ALARM` es casi siempre lo que quieres: evita la revisión de Play
+por los permisos restringidos. Guardar, leer y consultar datos funcionan igual en los tres modos.
+
+En Android 13 y posteriores, para que se vean los avisos hay que pedir `POST_NOTIFICATIONS` en
+tiempo de ejecución; `Permissions.request(this)` ya lo hace.
+
 ## 2. Datos: colecciones
 
 ```kotlin
