@@ -75,7 +75,7 @@ mesh.actAsSupernode(false)  // encendido por defecto; así se apaga si el usuari
 ### React Native (Android)
 
 ```sh
-npm install github:juanmanuel767/mobilemesh#v0.1.10
+npm install github:juanmanuel767/mobilemesh#v0.2.0
 ```
 
 ```js
@@ -99,7 +99,7 @@ En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
 ```kotlin
 dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
 
-dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.10") }
+dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.2.0") }
 ```
 
 ```kotlin
@@ -112,22 +112,18 @@ El núcleo en Rust ya va dentro y funciona en móviles reales (`arm64-v8a`) y en
 
 ### Web
 
-**1. Instala el paquete** (no hace falta instalar Rust ni compilar nada):
-
-```sh
-npm install mobilemesh
-```
-
-Si no usas npm, descárgalo con un solo comando en la carpeta de tu proyecto:
+**1. Un solo comando** en la carpeta de tu proyecto (no hace falta instalar Rust ni compilar nada):
 
 ```sh
 curl -sL https://github.com/juanmanuel767/mobilemesh/releases/latest/download/mobilemesh-web.tar.gz | tar xz
 ```
 
+El paquete `npm install mobilemesh` está preparado y se publicará en breve; hasta entonces usa el comando de arriba.
+
 **2. Úsalo:**
 
 ```js
-import { MobileMesh } from "mobilemesh";   // sin npm: "./mobilemesh/mobilemesh.js"
+import { MobileMesh } from "./mobilemesh/mobilemesh.js";
 
 const mesh = await MobileMesh.iniciar();                    // crea la cuenta la primera vez
 await mesh.guardar("tareas", "t1", "titulo", "Comprar pan"); // cifrado y en el dispositivo

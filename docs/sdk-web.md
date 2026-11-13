@@ -10,17 +10,13 @@ Tu página ⇄ trabajador con el núcleo (WebAssembly) ⇄ WebSocket ⇄ relé �
 
 ## 1. Instalar
 
-**Con npm (recomendado):**
-
-```sh
-npm install mobilemesh
-```
-
-**Sin npm:** un solo comando, ya compilado:
+**Un solo comando**, ya compilado:
 
 ```sh
 curl -sL https://github.com/juanmanuel767/mobilemesh/releases/latest/download/mobilemesh-web.tar.gz | tar xz
 ```
+
+**Con npm:** el paquete está preparado en `web/package.json` pero todavía no está publicado. Cuando lo esté, bastará con `npm install mobilemesh` e importar desde `"mobilemesh"`.
 
 Copia a tu web `mobilemesh.js`, `red.js`, `nucleo-worker.js` y la carpeta `pkg/` (deben quedar juntos).
 

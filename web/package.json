@@ -1,6 +1,6 @@
 {
   "name": "mobilemesh",
-  "version": "0.1.10",
+  "version": "0.2.0",
   "description": "Serverless database and messaging between devices, in the browser (WebAssembly). Base de datos y mensajería entre dispositivos sin servidor, en el navegador.",
   "license": "MIT",
   "repository": {
