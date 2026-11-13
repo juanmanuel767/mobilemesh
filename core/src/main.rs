@@ -40,6 +40,7 @@ const USO: &str = "uso:
   mesh <carpeta> publicar <pieza> <colección> <id> <json>   publicar un documento para todos
   mesh <carpeta> despublicar <pieza> <colección> <id>        borrar un documento mío
   mesh <carpeta> consultar-publico <pieza> <colección> [orden]   lo publicado por todos (mayor primero)
+  mesh <carpeta> app <paquete>                      a qué app pertenecen mis nombres (com.empresa.app)
   mesh <carpeta> registrar-nombre <guía> <nombre> <mi ruta>   registrar mi nombre en una guía
   mesh <carpeta> buscar-nombre <guía> <nombre>        invitación de un nombre
   mesh <carpeta> pedir-contacto <guía> <nombre>       avisar a un nombre de que quiero hablar con él
@@ -98,6 +99,12 @@ fn run() -> Result<()> {
             let (me, store) = open()?;
             let route = store.relay_route()?.map_or(addr.to_string(), |r| format!("{addr}|{r}"));
             println!("{}", invite(&me, &route));
+        }
+        // «-» quita el relé y vuelve a recibir solo por la dirección propia, como `usarRele(null)`
+        // en el SDK: sin esto no había manera de deshacerlo desde la línea de órdenes.
+        ["usar-rele", "-"] => {
+            open()?.1.set_setting("rele", None)?;
+            println!("sin relé: solo mi dirección");
         }
         ["usar-rele", relay] => {
             mobilemesh_core::transport::check_route(relay)?;
@@ -359,6 +366,16 @@ fn run() -> Result<()> {
             for (id, autor, campos) in mobilemesh_core::publico::query(&store, &me, pieza, coleccion, vec![], orden, true, 20)? {
                 println!("{id}  {campos}  (de {}…)", &autor[..12]);
             }
+        }
+        // Cada app tiene su espacio de nombres (el paquete de Android, que el SDK pone solo). Un
+        // ayudante arrancado con este programa no es una app, así que su nombre caía en el espacio
+        // común y las apps no lo encontraban: aquí se le dice a qué app pertenece antes de
+        // registrarlo. Sin identificador vuelve al espacio común.
+        ["app", identificador] => {
+            let store = open()?.1;
+            let a = mobilemesh_core::nombres::normalize_app(identificador)?;
+            store.set_setting("app", Some(&a).filter(|a| !a.is_empty()).map(|a| a.as_str()))?;
+            println!("app: {}", if a.is_empty() { "espacio común" } else { &a });
         }
         ["registrar-nombre", guia, nombre, ruta] => {
             let (me, store) = open()?;
