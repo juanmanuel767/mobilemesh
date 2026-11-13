@@ -28,7 +28,7 @@ arreglaron casi todos y se volvieron a verificar con una segunda revisión.
 
 ## Pruebas
 
-- **52 pruebas automáticas** en la fecha de esta auditoría (hoy son 76; ver el README), que pasan
+- **52 pruebas automáticas** en la fecha de esta auditoría (hoy son 80; ver el README), que pasan
   siempre (comprobado varias veces seguidas), entre ellas
   9 ataques simulados: basura en el saludo, longitudes enormes, conexiones a medias, desconocidos,
   líneas raras y avalanchas contra el relé, robo de buzón sin la clave, invitaciones y códigos
