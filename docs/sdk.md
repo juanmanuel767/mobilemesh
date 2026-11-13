@@ -19,7 +19,11 @@ Ya compilado, con el núcleo en Rust dentro. Funciona en móviles reales (`arm64
 
 La API está en inglés (`start`, `collection`, `save`, `subscribe`…). Los nombres en español siguen funcionando como alias obsoletos (`@Deprecated`): el código que ya los usaba compila igual, solo verás avisos.
 
-Requisitos: `compileSdk` 35 o superior · `minSdk` 28 · JDK 17
+Requisitos: `compileSdk` 35 o superior · `minSdk` 28 · JDK 17 · Kotlin 2.2.0 o superior
+
+Kotlin 2.2.0 es obligatorio: las clases del SDK se compilan con esa versión y un plugin anterior
+falla con «was compiled with an incompatible version of Kotlin». Combinación probada desde un
+proyecto nuevo: AGP 8.7.3, Gradle 8.9, Kotlin 2.2.0, `compileSdk` 35.
 
 La librería añade sola sus permisos (red, avisos, segundo plano). Todos los tipos de esta guía (`MobileMesh`, `BackgroundMode`, `Permissions`, `MeshCollection`, `Document`, `Message`, `AccountState`, `MobileMeshError`…) viven en el paquete `org.mobilemesh.sdk`.
 

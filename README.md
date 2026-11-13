@@ -102,7 +102,7 @@ dependencyResolutionManagement { repositories { google(); mavenCentral(); maven(
 dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.2.1") }
 ```
 
-Requisitos: `compileSdk` 35 o superior · `minSdk` 28 · JDK 17
+Requisitos: `compileSdk` 35 o superior · `minSdk` 28 · JDK 17 · Kotlin 2.2.0 o superior
 
 ```kotlin
 import org.mobilemesh.sdk.MobileMesh
