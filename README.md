@@ -65,7 +65,7 @@ flowchart LR
 - Si un supernodo se va, las apps pasan al relé del proyecto y eligen otro solas.
 
 ```kotlin
-mesh.hacerDeSupernodo(false)  // encendido por defecto; así se apaga si el usuario no quiere
+mesh.actAsSupernode(false)  // encendido por defecto; así se apaga si el usuario no quiere
 ```
 
 ✅ Probado en móviles reales: un mensaje entre dos móviles con datos móviles pasó por un supernodo en casa, sin tocar el relé del proyecto.
@@ -103,14 +103,22 @@ dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.10") }
 ```
 
 ```kotlin
-val mesh = MobileMesh.iniciar(this)   // crea la cuenta la primera vez
+val mesh = MobileMesh.start(this)   // crea la cuenta la primera vez
 ```
 
-El núcleo en Rust ya va dentro (teléfonos de 64 bits, `arm64-v8a`). [Guía del SDK de Android](docs/sdk.md) · ejemplo [`examples/notas`](examples/notas).
+La API está en inglés (`start`, `collection`, `save`, `subscribe`…). Los nombres en español siguen funcionando como alias obsoletos (`@Deprecated`), así que el código que ya los usaba compila igual.
+
+El núcleo en Rust ya va dentro y funciona en móviles reales (`arm64-v8a`) y en el emulador de Android Studio (`x86_64`). [Guía del SDK de Android](docs/sdk.md) · ejemplo [`examples/notas`](examples/notas).
 
 ### Web
 
-**1. Un solo comando** en la carpeta de tu proyecto (no hace falta instalar Rust ni compilar nada):
+**1. Instala el paquete** (no hace falta instalar Rust ni compilar nada):
+
+```sh
+npm install mobilemesh
+```
+
+Si no usas npm, descárgalo con un solo comando en la carpeta de tu proyecto:
 
 ```sh
 curl -sL https://github.com/juanmanuel767/mobilemesh/releases/latest/download/mobilemesh-web.tar.gz | tar xz
@@ -119,7 +127,7 @@ curl -sL https://github.com/juanmanuel767/mobilemesh/releases/latest/download/mo
 **2. Úsalo:**
 
 ```js
-import { MobileMesh } from "./mobilemesh/mobilemesh.js";
+import { MobileMesh } from "mobilemesh";   // sin npm: "./mobilemesh/mobilemesh.js"
 
 const mesh = await MobileMesh.iniciar();                    // crea la cuenta la primera vez
 await mesh.guardar("tareas", "t1", "titulo", "Comprar pan"); // cifrado y en el dispositivo

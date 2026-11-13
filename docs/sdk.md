@@ -15,54 +15,46 @@ dependencyResolutionManagement { repositories { google(); mavenCentral(); maven(
 dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.1.10") }
 ```
 
-Ya compilado, con el núcleo en Rust dentro (teléfonos de 64 bits, `arm64-v8a`). Para compilarlo tú: `android/build.sh`.
+Ya compilado, con el núcleo en Rust dentro. Funciona en móviles reales (`arm64-v8a`) y en el emulador de Android Studio (`x86_64`).
 
-## 1. Añadir la librería
-
-En `settings.gradle.kts` incluye el módulo y en tu app:
-
-```kotlin
-dependencies {
-    implementation(project(":mobilemesh-sdk"))
-}
-```
+La API está en inglés (`start`, `collection`, `save`, `subscribe`…). Los nombres en español siguen funcionando como alias obsoletos (`@Deprecated`): el código que ya los usaba compila igual, solo verás avisos.
 
 `minSdk` 28. La librería añade sola sus permisos (red, avisos, segundo plano).
 
-## 2. Empezar
+## 1. Empezar
 
 ```kotlin
-val mesh = MobileMesh.iniciar(context, puerto = 7811) // crea la cuenta la primera vez
+val mesh = MobileMesh.start(context, port = 7811) // crea la cuenta la primera vez
 ```
 
-- Cada app del mismo teléfono debe usar un `puerto` distinto.
+- Cada app del mismo teléfono debe usar un `port` distinto.
 - Si el teléfono está bloqueado lanza `MobileMeshError` (la cuenta solo se abre desbloqueado);
-  consúltalo antes con `MobileMesh.estado(context)`.
+  consúltalo antes con `MobileMesh.state(context)`.
 - MobileMesh queda recibiendo en segundo plano (servicio con notificación fija).
-- Para que reciba al 100 % con la app cerrada, llama en `onResume` a `Permisos.pedir(this)`: pide uno
+- Para que reciba al 100 % con la app cerrada, llama en `onResume` a `Permissions.request(this)`: pide uno
   por uno los avisos, la batería sin restricciones y el inicio automático del fabricante (TECNO,
   Xiaomi, Huawei, Oppo, Vivo, ZTE, Samsung). Solo pregunta lo que falte.
 
-## 3. Datos: colecciones
+## 2. Datos: colecciones
 
 ```kotlin
-val pedidos = mesh.coleccion("pedidos")
-pedidos.guardar("p1", mapOf("producto" to "pan", "cantidad" to 2, "pagado" to false))
-pedidos.leer("p1")?.campos?.get("cantidad")      // 2
-pedidos.todos()                                  // List<Documento>
-pedidos.guardar("p1", mapOf("pagado" to true))   // cambia solo ese campo
-pedidos.borrar("p1")
+val orders = mesh.collection("orders")
+orders.save("p1", mapOf("product" to "bread", "quantity" to 2, "paid" to false))
+orders.read("p1")?.fields?.get("quantity")      // 2
+orders.all()                                  // List<Document>
+orders.save("p1", mapOf("paid" to true))   // cambia solo ese campo
+orders.delete("p1")
 
-val parar = pedidos.escuchar { docs -> mostrar(docs) } // tiempo real
+val parar = orders.subscribe { docs -> show(docs) } // tiempo real
 parar()                                                // dejar de escuchar
 ```
 
 Consultas: filtrar, ordenar y limitar (también en tiempo real):
 
 ```kotlin
-pedidos.donde("precio", ">", 10).donde("pagado", "==", false)
-    .ordenarPor("precio", descendente = true).limite(20).obtener()
-pedidos.donde("producto", "contiene", "pan").escuchar { docs -> mostrar(docs) }
+orders.where("price", ">", 10).where("paid", "==", false)
+    .sortBy("price", descending = true).limit(20).get()
+orders.where("product", "contiene", "bread").subscribe { docs -> show(docs) }
 ```
 
 Operadores: `==`, `!=`, `<`, `<=`, `>`, `>=`, `contiene` y `empieza` (sin distinguir mayúsculas) y
@@ -73,26 +65,53 @@ en el teléfono sobre la colección: va bien hasta miles de documentos.
 - Todo se guarda **al momento en el teléfono**, aunque no haya red, y se sincroniza después.
 - Si dos teléfonos cambian **campos distintos**, se conservan los dos cambios; si cambian **el
   mismo**, gana el más reciente.
-- Para dinero o inventario usa `mesh.coleccion("caja", estricta = true)`: los cambios simultáneos no
-  se mezclan solos y aparecen en `Documento.conflictos` hasta que el usuario elija (guardando el
+- Para dinero o inventario usa `mesh.collection("cash", strict = true)`: los cambios simultáneos no
+  se mezclan solos y aparecen en `Document.conflicts` hasta que el usuario elija (guardando el
   valor correcto).
 
-## 4. Usuarios y contactos
+## 3. Usuarios y contactos
 
 No hay contraseñas en ningún servidor: la cuenta es una clave protegida en el teléfono.
 
 ```kotlin
-val miInvitacion = mesh.invitacion()          // texto para un QR; solo datos públicos
-mesh.anadirContacto("Ana", invitacionDeAna)   // true si era otro teléfono tuyo
-mesh.contactos()
-mesh.bloquear("Ana")
+val myInvitation = mesh.invitation()          // texto para un QR; solo datos públicos
+mesh.addContact("Ana", anasInvitation)   // true si era otro teléfono tuyo
+mesh.contacts()
+mesh.block("Ana")
 ```
+
+### Tu primer mensaje
+
+Hacen falta **dos dispositivos** (dos móviles, o un móvil y un emulador), cada uno con su cuenta y con red. Los dos ejecutan `MobileMesh.start(context)`; después hay dos caminos para que se conozcan.
+
+Por nombre (sin intercambiar nada a mano):
+
+```kotlin
+// Dispositivo A
+mesh.registerName("ana")      // aparece en la guía de nombres
+// Dispositivo B
+mesh.addByName("ana")         // la añade y le avisa
+// Dispositivo A: añade a quien le ha pedido hablar (devuelve sus nombres)
+mesh.acceptRequests()
+// Cualquiera de los dos
+mesh.sendMessage("ana", "hola") { r -> r.onSuccess { /* enviado */ } }
+```
+
+Con invitación (un QR o texto, en ambos sentidos):
+
+```kotlin
+val myInvitation = mesh.invitation()     // cada uno genera la suya y se la pasa al otro
+mesh.addContact("Ana", anasInvitation)   // y añade la del otro
+mesh.sendMessage("Ana", "hola") { r -> r.onSuccess { /* enviado */ } }
+```
+
+El que recibe se entera con `mesh.onReceive { count -> … }` y lee con `mesh.messages()`. `invitation()` y `registerName()` necesitan conexión a una red.
 
 Recuperar la cuenta si se pierde el teléfono:
 
 ```kotlin
-val codigo = mesh.copiaDeRecuperacion("una contraseña larga") // el usuario lo guarda fuera
-MobileMesh.recuperar(context, codigo, "una contraseña larga")  // en el teléfono nuevo
+val codigo = mesh.recoveryBackup("una contraseña larga") // el usuario lo guarda fuera
+MobileMesh.recover(context, codigo, "una contraseña larga")  // en el teléfono nuevo
 ```
 
 ### Colecciones públicas: lo que ven todos
@@ -103,52 +122,52 @@ lleva su autor y nadie puede cambiar ni borrar lo de otro. Hasta 4 KB por docume
 en cada colección; consultas con los mismos filtros, orden y límite (≤100).
 
 ```kotlin
-val ranking = mesh.coleccionPublica("ranking")
-ranking.publicar("ana", mapOf("nombre" to "Ana", "puntos" to 120))
-ranking.ordenarPor("puntos", descendente = true).limite(10).obtener { r ->
-    r.onSuccess { top -> top.forEach { println("${it.campos["nombre"]}: ${it.campos["puntos"]}") } }
+val ranking = mesh.publicCollection("ranking")
+ranking.publish("ana", mapOf("name" to "Ana", "points" to 120))
+ranking.sortBy("points", descending = true).limit(10).get { r ->
+    r.onSuccess { top -> top.forEach { println("${it.fields["name"]}: ${it.fields["points"]}") } }
 }
 ```
 
 Tu propia pieza: `mesh <carpeta> publico 0.0.0.0:7956 <ruta pública>` y
-`mesh.usarPiezaPublica("<su invitación>")`.
+`mesh.usePublicServer("<su invitación>")`.
 
-## 5. Compartir datos con permisos
+## 4. Compartir datos con permisos
 
 ```kotlin
-val lista = mesh.coleccion("lista")
-lista.compartirCon("Ana", puedeCambiar = false) // Ana solo puede leer
-lista.compartirCon("Ana", puedeCambiar = true)  // Ana puede leer y cambiar
-lista.dejarDeCompartirCon("Ana")
+val list = mesh.collection("list")
+list.shareWith("Ana", canChange = false) // Ana solo puede leer
+list.shareWith("Ana", canChange = true)  // Ana puede leer y cambiar
+list.unshareWith("Ana")
 ```
 
 Para recibir lo que Ana comparte, comparte tú la misma colección con ella. Lo compartido se
-sincroniza solo cada pocos segundos (o ya mismo con `lista.sincronizarCon("Ana")`). Nadie puede
+sincroniza solo cada pocos segundos (o ya mismo con `list.syncWith("Ana")`). Nadie puede
 cambiar lo que solo puede leer ni hacer cambios a nombre de otro.
 
-## 6. Mensajes y archivos
+## 5. Mensajes y archivos
 
 ```kotlin
-mesh.enviarMensaje("Ana", "hola") { r -> r.onFailure { /* queda pendiente, se reintenta solo */ } }
-mesh.enviarArchivo("Ana", uriDeLaFoto, "foto.jpg")
-mesh.mensajes()
-val parar = mesh.alRecibir { cuantos -> /* llegó algo nuevo */ }
+mesh.sendMessage("Ana", "hola") { r -> r.onFailure { /* queda pendiente, se reintenta solo */ } }
+mesh.sendFile("Ana", uriDeLaFoto, "foto.jpg")
+mesh.messages()
+val parar = mesh.onReceive { count -> /* llegó algo nuevo */ }
 ```
 
 Las operaciones de red trabajan en segundo plano y avisan en el hilo principal.
 
 **Avisos con la app cerrada o la pantalla apagada (sin Google):** si el destino está dormido, el
-mensaje queda cifrado en su buzón del relé (`Envio.enBuzon = true`). Su teléfono despierta cada pocos
+mensaje queda cifrado en su buzón del relé (`Delivery.inMailbox = true`). Su teléfono despierta cada pocos
 minutos, lo recoge, avisa y devuelve el acuse de recibo. No es instantáneo:
 
 ```kotlin
-mesh.mirarBuzonCada(3) // minutos (3 por defecto); en reposo profundo Android lo espacia a ~10
+mesh.checkMailboxEvery(3) // minutos (3 por defecto); en reposo profundo Android lo espacia a ~10
 ```
 
 ### Avisos al instante sin Google (encendido por defecto)
 
 ```kotlin
-mesh.recepcionInstantanea(false) // encendida por defecto; así se apaga
+mesh.instantReception(false) // encendida por defecto; así se apaga
 ```
 
 Mantiene el sonido abierto en silencio: los fabricantes no congelan una app que suena, así que la
@@ -175,7 +194,7 @@ Y en el servidor, el relé con el programa de avisos y la clave de servicio de t
 FCM_CUENTA=/ruta/cuenta-servicio.json mesh-rele 0.0.0.0:7900 --avisos tools/avisar-fcm.py
 ```
 
-## 7. Funciones de servidor: ayudantes
+## 6. Funciones de servidor: ayudantes
 
 Para lo que no puede hacer el teléfono (cobrar un pago, mandar un correo, consultar otra API) pon un
 **ayudante** en tu servidor: es un MobileMesh sin pantalla que ejecuta tu programa, en el lenguaje
@@ -193,16 +212,16 @@ la entrada; lo que escriba por la salida es el resultado, y si termina con error
 la salida de errores es el error (ejemplo: `tools/ejemplo-ayudante.sh`). Como mucho 30 s por llamada.
 
 ```kotlin
-mesh.anadirContacto("tienda", invitacionDelAyudante)
-mesh.llamar("tienda", "cobrar", mapOf("pedido" to "p1", "total" to 12.5)) { r ->
+mesh.addContact("tienda", helperInvitation)
+mesh.call("tienda", "cobrar", mapOf("pedido" to "p1", "total" to 12.5)) { r ->
     r.onSuccess { resultado -> … }.onFailure { error -> … }
 }
 ```
 
-Las llamadas y respuestas no aparecen en `mensajes()` ni hacen sonar avisos. Medido: respuesta en
+Las llamadas y respuestas no aparecen en `messages()` ni hacen sonar avisos. Medido: respuesta en
 0,4 s desde un TECNO por wifi.
 
-## 8. Redes distintas: tu propio relé
+## 7. Redes distintas: tu propio relé
 
 Entre wifi y datos móviles hace falta un relé (no puede leer nada):
 
@@ -211,7 +230,7 @@ mesh-rele 0.0.0.0:7900   # en un equipo con dirección pública
 ```
 
 ```kotlin
-mesh.usarRele("mi-servidor.com:7900") // se aplica al reiniciar la app
+mesh.useRelay("mi-servidor.com:7900") // se aplica al reiniciar la app
 ```
 
 ### Supernodos: los usuarios ayudan (opcional)
@@ -221,23 +240,35 @@ batería ≥15 % (o cargando)**. Si deja de cumplirse, para solo y la app sigue 
 nada de lo que pasa por él. Así, cuantos más usuarios, más capacidad, sin depender de un servidor.
 
 ```kotlin
-mesh.hacerDeSupernodo(false)  // encendido por defecto; así se apaga (p. ej. si el usuario no quiere)
-mesh.esSupernodo()            // ¿lo está siendo ahora?
+mesh.actAsSupernode(false)  // encendido por defecto; así se apaga (p. ej. si el usuario no quiere)
+mesh.isSupernode()            // ¿lo está siendo ahora?
 ```
 
 Las apps eligen solas un supernodo (y el relé del proyecto queda de respaldo). Como usa un poco del
 internet del usuario, dilo en la política de privacidad de tu app y ofrécele apagarlo.
 
-## 9. Errores y diagnóstico
+## 8. Errores y diagnóstico
 
 - Todos los errores son `MobileMeshError` con un mensaje en español listo para mostrar.
-- `mesh.diagnostico()` devuelve un resumen sin datos privados: cuenta, dispositivo, relé, contactos,
+- `mesh.diagnostics()` devuelve un resumen sin datos privados: cuenta, dispositivo, relé, contactos,
   pendientes, cambios sin confirmar, copias.
-- `mesh.modoSinConexion(true)` simula no tener red.
+- `mesh.offlineMode(true)` simula no tener red.
 
 ## Lo que todavía no hace
 
-- Avisos instantáneos con la pantalla apagada (llegan en el siguiente despertar, ver sección 6).
+- Avisos instantáneos con la pantalla apagada (llegan en el siguiente despertar, ver sección 5).
 - Archivos por el buzón: esperan a la entrega directa.
 - iPhone y navegador (el núcleo en Rust ya está preparado para ello).
 - Buscar entre datos de distintos usuarios (no hay ningún sitio con los datos de todos: es la idea).
+
+## Compilar desde el código fuente
+
+Solo si quieres modificar el SDK: clona el repositorio, compila el núcleo con `android/build.sh`, incluye el módulo en `settings.gradle.kts` (`include(":mobilemesh-sdk")`) y en tu app:
+
+```kotlin
+dependencies {
+    implementation(project(":mobilemesh-sdk"))
+}
+```
+
+Para usar el SDK tal cual, la instalación de JitPack del principio es suficiente.

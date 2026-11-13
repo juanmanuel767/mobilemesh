@@ -9,7 +9,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import org.mobilemesh.sdk.MobileMesh
 import org.mobilemesh.sdk.MobileMeshError
-import org.mobilemesh.sdk.Permisos
+import org.mobilemesh.sdk.Permissions
 
 /**
  * Ejemplo de app hecha con MobileMesh en lugar de Firebase o Supabase: notas que se guardan en el
@@ -21,11 +21,11 @@ class NotasActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         val mesh = try {
-            MobileMesh.iniciar(this, puerto = 7811) // 1. abrir (o crear) la cuenta
+            MobileMesh.start(this, port = 7811) // 1. abrir (o crear) la cuenta
         } catch (e: MobileMeshError) {
             return setContentView(TextView(this).apply { text = e.message; setPadding(40, 120, 40, 40) })
         }
-        val notas = mesh.coleccion("notas") // 2. una colección
+        val notas = mesh.collection("notas") // 2. una colección
 
         val estado = TextView(this)
         val lista = TextView(this).apply { textSize = 17f }
@@ -43,7 +43,7 @@ class NotasActivity : Activity() {
                 text = "Guardar nota"
                 setOnClickListener {
                     // 3. guardar: queda en el teléfono al momento y se comparte solo
-                    notas.guardar("n${System.currentTimeMillis()}", mapOf("texto" to nota.text.toString(), "de" to android.os.Build.MODEL, "hora" to System.currentTimeMillis()))
+                    notas.save("n${System.currentTimeMillis()}", mapOf("texto" to nota.text.toString(), "de" to android.os.Build.MODEL, "hora" to System.currentTimeMillis()))
                     nota.setText("")
                 }
             })
@@ -55,7 +55,7 @@ class NotasActivity : Activity() {
                 text = "Ver mi invitación"
                 setOnClickListener {
                     miInvitacion.text = try {
-                        "Tu invitación (pásasela):\n" + mesh.invitacion()
+                        "Tu invitación (pásasela):\n" + mesh.invitation()
                     } catch (e: MobileMeshError) {
                         e.message
                     }
@@ -69,8 +69,8 @@ class NotasActivity : Activity() {
                 setOnClickListener {
                     try {
                         val n = nombre.text.toString().trim()
-                        mesh.anadirContacto(n, invitacion.text.toString()) // 4. contacto…
-                        notas.compartirCon(n, puedeCambiar = true) // 5. …y compartir
+                        mesh.addContact(n, invitacion.text.toString()) // 4. contacto…
+                        notas.shareWith(n, canChange = true) // 5. …y compartir
                         estado.text = "Compartido con $n: sus notas y las tuyas se juntarán solas"
                     } catch (e: MobileMeshError) {
                         estado.text = "Error: ${e.message}"
@@ -85,8 +85,8 @@ class NotasActivity : Activity() {
         // se redibuja cuando cambia algo, aquí o en el teléfono de la otra persona
         fun mostrar(texto: String) {
             dejarDeEscuchar?.invoke()
-            dejarDeEscuchar = notas.donde("texto", "contiene", texto).ordenarPor("hora", descendente = true).escuchar { docs ->
-                lista.text = docs.joinToString("\n") { "• ${it.campos["texto"]}  (${it.campos["de"]})" }
+            dejarDeEscuchar = notas.where("texto", "contiene", texto).sortBy("hora", descending = true).subscribe { docs ->
+                lista.text = docs.joinToString("\n") { "• ${it.fields["texto"]}  (${it.fields["de"]})" }
                     .ifEmpty { if (texto.isEmpty()) "Todavía no hay notas" else "Ninguna nota contiene «$texto»" }
             }
         }
@@ -100,7 +100,7 @@ class NotasActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        Permisos.pedir(this) // 7. permisos para recibir con la app cerrada (solo pregunta lo que falte)
+        Permissions.request(this) // 7. permisos para recibir con la app cerrada (solo pregunta lo que falte)
     }
 
     override fun onDestroy() {
