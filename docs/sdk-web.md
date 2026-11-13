@@ -8,23 +8,29 @@ de datos, sin Firebase, sin Supabase.
 Tu página ⇄ trabajador con el núcleo (WebAssembly) ⇄ WebSocket ⇄ relé ⇄ móviles y otras webs
 ```
 
-## 1. Preparar
+## 1. Instalar
 
-**Lo fácil (recomendado):** un solo comando, ya compilado:
+**Con npm (recomendado):**
+
+```sh
+npm install mobilemesh
+```
+
+**Sin npm:** un solo comando, ya compilado:
 
 ```sh
 curl -sL https://github.com/juanmanuel767/mobilemesh/releases/latest/download/mobilemesh-web.tar.gz | tar xz
 ```
+
+Copia a tu web `mobilemesh.js`, `red.js`, `nucleo-worker.js` y la carpeta `pkg/` (deben quedar juntos).
 
 **Compilarlo tú:**
 
 ```sh
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.129 --locked
-sh web/construir.sh            # genera web/pkg
+sh web/construir.sh            # genera web/pkg y deja web/ listo para npm
 ```
-
-Copia a tu web: `mobilemesh.js`, `red.js`, `nucleo-worker.js` y la carpeta `pkg/`.
 
 ## 2. Cabeceras obligatorias
 
@@ -36,12 +42,62 @@ Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-(`web/servir.py` las pone para probar en local.)
+Sin ellas `MobileMesh.iniciar()` lanza un error (`crossOriginIsolated` es falso). Con
+`require-corp`, todo recurso de otro origen (imágenes, scripts, fuentes) debe enviar
+`Cross-Origin-Resource-Policy: cross-origin` o cargarse con CORS.
+
+**Vite** (`vite.config.js`; también para `vite preview`):
+
+```js
+import { defineConfig } from "vite";
+
+const cabeceras = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+};
+
+export default defineConfig({
+  server: { headers: cabeceras },
+  preview: { headers: cabeceras },
+  optimizeDeps: { exclude: ["mobilemesh"] },   // que Vite no reempaquete el worker ni el .wasm
+  worker: { format: "es" },
+});
+```
+
+**Next.js** (`next.config.js`):
+
+```js
+module.exports = {
+  async headers() {
+    return [{
+      source: "/(.*)",
+      headers: [
+        { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+        { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+      ],
+    }];
+  },
+};
+```
+
+Usa MobileMesh solo en el navegador (dentro de `useEffect` o con `import()` dinámico en un
+componente de cliente), nunca en el servidor.
+
+**Servidor estático** (nginx):
+
+```nginx
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header Cross-Origin-Embedder-Policy "require-corp" always;
+```
+
+En Apache: `Header always set Cross-Origin-Opener-Policy "same-origin"` y
+`Header always set Cross-Origin-Embedder-Policy "require-corp"`. Para probar en local,
+`web/servir.py` las pone.
 
 ## 3. Usar
 
 ```js
-import { MobileMesh } from "./mobilemesh.js";
+import { MobileMesh } from "mobilemesh";   // sin npm: "./mobilemesh.js"
 
 const mesh = await MobileMesh.iniciar();
 console.log("mi cuenta:", await mesh.cuenta());

@@ -1,0 +1,30 @@
+{
+  "name": "mobilemesh",
+  "version": "0.1.10",
+  "description": "Serverless database and messaging between devices, in the browser (WebAssembly). Base de datos y mensajería entre dispositivos sin servidor, en el navegador.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juanmanuel767/mobilemesh.git",
+    "directory": "web"
+  },
+  "keywords": ["mobilemesh", "database", "messaging", "p2p", "wasm", "serverless", "local-first"],
+  "type": "module",
+  "main": "./mobilemesh.js",
+  "module": "./mobilemesh.js",
+  "exports": {
+    ".": "./mobilemesh.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "mobilemesh.js",
+    "red.js",
+    "nucleo-worker.js",
+    "pkg/mobilemesh_core.js",
+    "pkg/mobilemesh_core.d.ts",
+    "pkg/mobilemesh_core_bg.wasm",
+    "pkg/mobilemesh_core_bg.wasm.d.ts",
+    "pkg/snippets/"
+  ],
+  "sideEffects": false
+}

@@ -7,4 +7,11 @@ set -eu
 cd "$(dirname "$0")/../core"
 cargo build --release --lib --target wasm32-unknown-unknown
 wasm-bindgen --target web --out-dir ../web/pkg target/wasm32-unknown-unknown/release/mobilemesh_core.wasm
+# Deja la carpeta lista para «cd web && npm publish»: el package.json ya está en web/ y
+# su lista «files» recoge el SDK, el trabajador y pkg/. Se comprueba que no falte nada.
+cd ../web
+for f in mobilemesh.js red.js nucleo-worker.js pkg/mobilemesh_core.js pkg/mobilemesh_core_bg.wasm; do
+  [ -f "$f" ] || { echo "Falta web/$f" >&2; exit 1; }
+done
 echo "Paquete web listo en web/pkg"
+echo "Para npm: cd web && npm pack --dry-run   (publicar: npm publish)"
