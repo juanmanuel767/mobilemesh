@@ -28,6 +28,10 @@
 //!   AVISO <clave pública>     → RETO → FIRMA → <ficha de avisos o «-» para quitarla> → OK
 //!   DIRECTORIO                → <directorio firmado> | NO
 //!   QUIEN                     → <la IP con la que el relé me ve>
+//!   SUPERNODO <puerto> [wifi|-] [b=batería] [c=0|1 enchufado] [u=buzones] → OK | NO
+//!   SUPERNODOS                → lista separada por comas de «pública» o «pública>wifi»
+//!   SUPERNODOS+               → la misma lista con «;b=NN;c=0|1;u=NN» detrás de cada uno, para
+//!                               elegir por calidad; un relé antiguo no la conoce
 //!
 //! **Avisos (opcional):** si el relé se arranca con un programa de avisos (p. ej. el que avisa por
 //! Firebase), al llegar una carta a un buzón con ficha de avisos lo ejecuta con la ficha como
@@ -64,7 +68,7 @@ use std::{
     net::IpAddr,
     sync::Arc,
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[doc(hidden)]
@@ -234,6 +238,177 @@ pub fn supernodes(director: &str) -> Result<Vec<String>> {
     s.set_read_timeout(Some(WAIT))?;
     writeln!(s, "SUPERNODOS")?;
     Ok(read_line_max(&mut s, 8192)?.split(',').map(str::trim).filter(|a| !a.is_empty()).map(String::from).collect())
+}
+
+/// La dirección por la que se le llega a un supernodo: la de su wifi si estamos en esa misma casa
+/// (el router no deja llegar a la IP pública desde dentro) y, si no, la pública.
+pub fn supernode_addr(entrada: &str) -> String {
+    let (publica, wifi) = supernode_parts(entrada);
+    wifi.filter(|w| w.parse().is_ok_and(|a| crate::transport::reachable(&a))).unwrap_or(publica).to_string()
+}
+
+// --- Elección por calidad (selección adaptativa de nodos de apoyo) ---------------------------
+//
+// Antes se elegía por sorteo: un hash del secreto del buzón repartía los clientes entre los
+// supernodos vivos (`choose`). Reparte bien la carga, pero ignora por completo si el supernodo
+// está lejos, saturado o a punto de quedarse sin batería. Aquí se elige por una puntuación de
+// enlace, batería y carga, y se conserva el sorteo para desempatar. `choose` sigue intacta: es el
+// camino de respaldo cuando el director es antiguo y no sabe dar métricas.
+
+/// Un supernodo con lo que anuncia de sí mismo, como lo da el director en `SUPERNODOS+`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SupernodeInfo {
+    /// Dirección tal cual: «pública» o «pública>wifi».
+    pub addr: String,
+    /// Batería que le queda, en múltiplos de 10 % (0 si no la dice).
+    pub bat: u8,
+    /// Si está enchufado.
+    pub cargando: bool,
+    /// Buzones que atiende ahora mismo.
+    pub uso: u16,
+}
+
+/// Buzones que admite un supernodo (`supernodo::MAX_CONEXIONES`).
+const TOPE_BUZONES: f32 = 64.0;
+/// A partir de este tiempo de ida y vuelta el enlace puntúa 0.
+const RTT_TOPE: f32 = 1000.0;
+/// Pesos de la puntuación: enlace, batería y carga. Se calibran con la prueba piloto.
+const W_RTT: f32 = 0.5;
+const W_BAT: f32 = 0.3;
+const W_USO: f32 = 0.2;
+/// Cuántos supernodos se miden de verdad: medir a todos gastaría datos y batería.
+const CANDIDATOS: usize = 5;
+/// Cuánto tiene que ganar el mejor para que compense cambiarse (histéresis).
+pub const MEJORA_MINIMA: f32 = 1.20;
+/// Por debajo de esta diferencia dos supernodos se consideran iguales y desempata el sorteo.
+const EMPATE: f32 = 0.05;
+
+/// Supernodos vivos **con sus métricas**. Un director antiguo no conoce `SUPERNODOS+`: entonces
+/// esto falla y quien llame debe seguir con [`supernodes`] y [`choose`].
+pub fn supernodes_info(director: &str) -> Result<Vec<SupernodeInfo>> {
+    let mut s = crate::net::connect(director, WAIT)?;
+    s.set_read_timeout(Some(WAIT))?;
+    writeln!(s, "SUPERNODOS+")?;
+    let linea = read_line_max(&mut s, 16384)?;
+    if linea.trim() == "NO" {
+        return Err("el director no da métricas de supernodos".into());
+    }
+    Ok(linea.split(',').filter_map(parse_info).collect())
+}
+
+/// «pública[>wifi];b=80;c=1;u=3» → ficha. Al que no dice sus métricas se le supone lo peor, para
+/// no premiar al que las calla.
+pub fn parse_info(entrada: &str) -> Option<SupernodeInfo> {
+    let mut trozos = entrada.trim().split(';');
+    let addr = trozos.next()?.trim();
+    if addr.is_empty() {
+        return None;
+    }
+    let (mut bat, mut cargando, mut uso) = (0u8, false, TOPE_BUZONES as u16);
+    for t in trozos {
+        match t.trim().split_once('=') {
+            Some(("b", v)) => bat = v.parse().unwrap_or(0).min(100),
+            Some(("c", v)) => cargando = v == "1",
+            Some(("u", v)) => uso = v.parse().unwrap_or(TOPE_BUZONES as u16).min(TOPE_BUZONES as u16),
+            _ => {}
+        }
+    }
+    Some(SupernodeInfo { addr: addr.to_string(), bat, cargando, uso })
+}
+
+/// Puntuación de 0 a 1: medio enlace, un tercio batería y el resto carga. `rtt` en milisegundos;
+/// `None` es «no contestó», que vale 0: de nada sirve el supernodo al que no se llega.
+pub fn score(sn: &SupernodeInfo, rtt: Option<u32>) -> f32 {
+    let Some(rtt) = rtt else { return 0.0 };
+    let q_rtt = 1.0 - (rtt as f32 / RTT_TOPE).min(1.0);
+    let q_bat = (sn.bat as f32 / 100.0 + if sn.cargando { 0.2 } else { 0.0 }).min(1.0);
+    let q_uso = 1.0 - (sn.uso as f32 / TOPE_BUZONES).min(1.0);
+    W_RTT * q_rtt + W_BAT * q_bat + W_USO * q_uso
+}
+
+/// Tiempo de ida y vuelta hasta el supernodo, en milisegundos: se le pregunta `QUIEN`, lo mismo que
+/// hace el director para comprobar que está vivo. El mejor de dos intentos; `None` si no contesta.
+pub fn probe_rtt(addr: &str) -> Option<u32> {
+    let plazo = Duration::from_secs(1);
+    (0..2)
+        .filter_map(|_| {
+            let t = Instant::now();
+            let mut s = crate::net::connect(addr, plazo).ok()?;
+            s.set_read_timeout(Some(plazo)).ok()?;
+            writeln!(s, "QUIEN").ok()?;
+            read_line(&mut s).ok()?;
+            u32::try_from(t.elapsed().as_millis()).ok()
+        })
+        .min()
+}
+
+/// Dónde empieza el reparto de este buzón: el mismo sorteo que usa [`choose`].
+fn rotacion(n: usize, secret: &str) -> usize {
+    let h = Sha256::digest(secret.as_bytes());
+    (u64::from_le_bytes(h[..8].try_into().unwrap_or_default()) % n.max(1) as u64) as usize
+}
+
+/// El mejor supernodo y su puntuación, con los tiempos de ida y vuelta ya medidos (`rtts` va en el
+/// mismo orden que `infos`). Entre los que empatan decide el sorteo de siempre, así dos teléfonos
+/// con candidatos igual de buenos no se amontonan en el mismo.
+pub fn mejor_con(infos: &[SupernodeInfo], rtts: &[Option<u32>], secret: &str) -> Option<(String, f32)> {
+    if infos.is_empty() {
+        return None;
+    }
+    let puntos: Vec<f32> = infos.iter().enumerate().map(|(i, sn)| score(sn, rtts.get(i).copied().flatten())).collect();
+    let techo = puntos.iter().copied().fold(f32::MIN, f32::max);
+    if techo <= 0.0 {
+        return None; // ninguno contestó
+    }
+    let inicio = rotacion(infos.len(), secret);
+    let gana = (0..infos.len()).map(|i| (inicio + i) % infos.len()).find(|&i| techo - puntos[i] < EMPATE)?;
+    Some((infos[gana].addr.clone(), puntos[gana]))
+}
+
+/// Como [`mejor_con`], midiendo el enlace a los [`CANDIDATOS`] que mejor pinta tienen por batería y
+/// carga. A los demás no se les mide: puntúan 0 y solo entran si ninguno de los medidos contesta.
+pub fn mejor(infos: &[SupernodeInfo], secret: &str) -> Option<(String, f32)> {
+    let mut orden: Vec<usize> = (0..infos.len()).collect();
+    orden.sort_by(|&a, &b| score(&infos[b], Some(0)).total_cmp(&score(&infos[a], Some(0))));
+    let miden: Vec<usize> = orden.into_iter().take(CANDIDATOS).collect();
+    let rtts: Vec<Option<u32>> = (0..infos.len()).map(|i| miden.contains(&i).then(|| probe_rtt(&supernode_addr(&infos[i].addr))).flatten()).collect();
+    mejor_con(infos, &rtts, secret)
+}
+
+/// Con qué supernodo quedarse: el actual, salvo que otro gane claro (más de un 20 %) **dos veces
+/// seguidas**. Sin esa doble condición, dos supernodos parecidos se turnarían cada diez minutos, y
+/// cada cambio cuesta soltar el buzón y registrarlo en el otro. `aspirante` lleva la cuenta de una
+/// vuelta a la siguiente: quién va ganando y desde cuántas vueltas.
+///
+/// No toca la red (los puntos vienen ya medidos), así que se puede probar tal cual.
+pub fn decidir_supernodo(actual: Option<(&str, f32)>, mejor: (&str, f32), aspirante: &mut Option<(String, u8)>) -> String {
+    let (candidato, puntos) = mejor;
+    let Some((actual, suyos)) = actual else {
+        *aspirante = None;
+        return candidato.to_string(); // no había ninguno: se coge el mejor y ya
+    };
+    if candidato == actual || !cambiar(suyos, puntos) {
+        *aspirante = None;
+        return actual.to_string();
+    }
+    match aspirante {
+        Some((quien, veces)) if quien == candidato => {
+            *veces += 1;
+            if *veces >= 2 {
+                *aspirante = None;
+                return candidato.to_string();
+            }
+        }
+        _ => *aspirante = Some((candidato.to_string(), 1)),
+    }
+    actual.to_string()
+}
+
+/// ¿Compensa dejar el supernodo actual por el mejor? Solo si gana por más de [`MEJORA_MINIMA`]:
+/// cambiar cuesta soltar el buzón y registrarlo en otro, y sin este freno dos supernodos parecidos
+/// se turnarían sin parar.
+pub fn cambiar(actual: f32, mejor: f32) -> bool {
+    actual <= 0.0 || mejor > actual * MEJORA_MINIMA
 }
 
 /// Mantiene el buzón registrado en el relé y entrega cada llamada a `on_call`.

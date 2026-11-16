@@ -7,7 +7,7 @@
 Dónde está cada cosa y para qué sirve. El propósito sale del comentario de cabecera de cada archivo;
 si no lo tiene aparece como _(sin descripción en el archivo)_ y se lista al final.
 
-**Archivos mapeados:** 109 · **sin descripción:** 14
+**Archivos mapeados:** 110 · **sin descripción:** 14
 
 ## Núcleo (core/src)
 
@@ -18,7 +18,7 @@ El corazón en Rust: almacenamiento, sincronización, red, cifrado, identidad, r
 | `core/src/access.rs` | Permisos y control de acceso (Fase 10). | 149 |
 | `core/src/directorio.rs` | Directorio (pieza aparte): lista **firmada** de relés y guardianes universales que las apps descargan solas de su relé al arrancar. | 93 |
 | `core/src/e2e.rs` | Cifrado de extremo a extremo por mensaje: Double Ratchet (Olm de vodozemac, biblioteca auditada). | 119 |
-| `core/src/ffi.rs` | Puerta de entrada para Android (Kotlin) y, más adelante, iPhone (Swift). | 1192 |
+| `core/src/ffi.rs` | Puerta de entrada para Android (Kotlin) y, más adelante, iPhone (Swift). | 1231 |
 | `core/src/files.rs` | Archivos (fotos, vídeos, documentos): se cifran por trozos con una clave propia de cada archivo. | 220 |
 | `core/src/funciones.rs` | Funciones de servidor sin servidor central: un **ayudante** es un MobileMesh sin pantalla que corre donde quiera el programador (su servidor, una Raspberry…). | 121 |
 | `core/src/guardian.rs` | Guardián (pieza aparte, va junto al relé): un MobileMesh sin pantalla que guarda, para cualquiera, lo necesario para recuperarse tras perder el teléfono: | 183 |
@@ -28,10 +28,10 @@ El corazón en Rust: almacenamiento, sincronización, red, cifrado, identidad, r
 | `core/src/nombres.rs` | Guía de nombres (pieza aparte, va junto al relé): un MobileMesh sin pantalla que hace de «agenda pública», para que las apps funcionen como cualquier base de datos con usuarios: | 211 |
 | `core/src/publico.rs` | Colecciones públicas (pieza aparte, va junto al relé): lo único de una app que se guarda fuera de los dispositivos, porque la app lo publica **a propósito** para que todos lo consulten (un ranking, un catálogo, un tablón). | 183 |
 | `core/src/recovery.rs` | Copia de recuperación: la clave de la **cuenta** cifrada con una contraseña que elige el usuario. | 184 |
-| `core/src/relay.rs` | Relé (Fase 9): une dos conexiones cuando los dispositivos no pueden conectarse directamente (redes distintas, datos móviles, routers). | 285 |
+| `core/src/relay.rs` | Relé (Fase 9): une dos conexiones cuando los dispositivos no pueden conectarse directamente (redes distintas, datos móviles, routers). | 460 |
 | `core/src/replica.rs` | Copias de seguridad cifradas guardadas en otros dispositivos (Fase 8). | 311 |
 | `core/src/store.rs` | Base de datos local (SQLite): contactos, mensajes con su estado y estado del cifrado. | 1250 |
-| `core/src/supernodo.rs` | Supernodo: el móvil de un usuario hace de relé ligero para otros mientras está en wifi y con batería (lo decide la app). | 233 |
+| `core/src/supernodo.rs` | Supernodo: el móvil de un usuario hace de relé ligero para otros mientras está en wifi y con batería (lo decide la app). | 246 |
 | `core/src/sync.rs` | Datos sincronizados entre los dispositivos de una cuenta (Fase 7). | 425 |
 | `core/src/transport.rs` | Conexión directa cifrada entre dos dispositivos (TCP + Noise XX). | 377 |
 | `core/src/upnp.rs` | Abrir un puerto en el router de casa por UPnP (pieza aparte). | 139 |
@@ -49,6 +49,7 @@ Pruebas de integración del núcleo: durabilidad, ataques, red, migración y med
 | `core/tests/medidas.rs` | Fase 13: mediciones de coste (ejecutar con `cargo test --release --test medidas -- --nocapture`). | 125 |
 | `core/tests/migracion.rs` | Pasar una base de datos de una versión anterior (sin cifrar) a la base cifrada, sin perder ni un dato. | 142 |
 | `core/tests/red.rs` | Pruebas de la Fase 4/5 con dos o tres "teléfonos" simulados en el mismo equipo. | 1621 |
+| `core/tests/supernodo-adaptativo.rs` | Selección adaptativa de nodos de apoyo: elegir el supernodo por calidad del enlace, batería y carga, en vez de por sorteo. | 99 |
 | `core/tests/velocidad.rs` | Mediciones de velocidad reproducibles (no fallan: imprimen). | 90 |
 
 ## SDK Android
@@ -60,7 +61,7 @@ La librería Kotlin para apps Android y sus piezas auxiliares (avisos, app de de
 | `android/app/src/main/java/org/mobilemesh/demo/MainActivity.kt` | _(sin descripción en el archivo)_ | 739 |
 | `android/mobilemesh-avisos-fcm/src/main/java/org/mobilemesh/avisosfcm/AvisosFcm.kt` | Avisos al instante por Firebase (opcional). | 54 |
 | `android/mobilemesh-sdk/src/main/java/org/mobilemesh/sdk/KeystoreGuard.kt` | Cifra la identidad con una clave AES que vive en Android Keystore: esa clave no se puede sacar del teléfono, así que copiar el archivo de identidad a otro equipo no sirve de nada. | 49 |
-| `android/mobilemesh-sdk/src/main/java/org/mobilemesh/sdk/MeshService.kt` | _(sin descripción en el archivo)_ | 499 |
+| `android/mobilemesh-sdk/src/main/java/org/mobilemesh/sdk/MeshService.kt` | _(sin descripción en el archivo)_ | 527 |
 | `android/mobilemesh-sdk/src/main/java/org/mobilemesh/sdk/MobileMesh.kt` | _(sin descripción en el archivo)_ | 1076 |
 | `android/mobilemesh-sdk/src/main/java/org/mobilemesh/sdk/Permissions.kt` | Pide al usuario, uno por uno, los permisos para que MobileMesh funcione al 100 % (recibir con la app cerrada y la pantalla apagada): avisos, batería sin restricciones e inicio automático del fabricante. | 110 |
 
@@ -97,7 +98,7 @@ Los programas que hacen de relé y de servidor, incluida la app Android que conv
 | `android/rele-movil/src/main/java/org/mobilemesh/rele/Rele.kt` | _(sin descripción en el archivo)_ | 292 |
 | `servidor/src/bin/mesh-rele.rs` | `mesh-rele`: relé de MobileMesh que cualquiera puede ejecutar (en casa, en un servidor…). | 84 |
 | `servidor/src/lib.rs` | Programas de servidor de MobileMesh (licencia AGPL-3.0): el relé, el puente para navegadores (WebSocket) y el candado (wss). | 10 |
-| `servidor/src/rele.rs` | El relé en sí (pieza de servidor, licencia AGPL-3.0): buzones, empalme de conexiones, cartas, avisos, límites y velocidad. | 602 |
+| `servidor/src/rele.rs` | El relé en sí (pieza de servidor, licencia AGPL-3.0): buzones, empalme de conexiones, cartas, avisos, límites y velocidad. | 636 |
 | `servidor/src/tls.rs` | Candado (wss://) para el puente web del relé (pieza aparte). | 99 |
 | `servidor/src/websocket.rs` | Puente WebSocket del relé (pieza aparte): los navegadores no pueden abrir conexiones TCP, solo WebSocket. | 227 |
 

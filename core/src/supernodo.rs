@@ -25,7 +25,7 @@ use std::{
 };
 
 /// Topes pequeños: es el móvil de alguien, no un servidor.
-const MAX_CONEXIONES: usize = 64;
+pub const MAX_CONEXIONES: usize = 64;
 const MAX_POR_IP: usize = 8;
 /// La conexión de control de un buzón manda «PING» cada 25 s.
 const SILENCIO: Duration = Duration::from_secs(90);
@@ -80,6 +80,12 @@ impl Supernodo {
 
     pub fn activo(&self) -> bool {
         self.activo.load(Ordering::SeqCst)
+    }
+
+    /// Buzones que atiende ahora mismo (de 0 a [`MAX_CONEXIONES`]). Es lo que se anuncia al
+    /// director como carga, para que nadie elija un supernodo ya saturado.
+    pub fn buzones(&self) -> u16 {
+        self.lock().buzones.len().min(MAX_CONEXIONES) as u16
     }
 
     /// «N buzones · N llamadas · N KB reenviados».
@@ -222,11 +228,18 @@ fn empalmar(a: TcpStream, b: TcpStream, bytes: &Arc<AtomicU64>) {
 /// Se apunta en el director como supernodo en `puerto` (el público, abierto en el router) y, si se
 /// sabe, con su dirección en la wifi (`wifi`, «ip:puerto»), para quien esté en esa misma casa: el
 /// router no deja llegar a la IP pública desde dentro. `true` si el director lo aceptó.
-pub fn apuntarse(director: &str, puerto: u16, wifi: Option<&str>) -> bool {
+///
+/// Además anuncia cómo está: la batería que le queda (`bat`, redondeada a múltiplos de 10 % para
+/// que no sirva de huella del teléfono), si está enchufado y cuántos buzones atiende. Con eso los
+/// demás lo eligen por calidad y no al azar. Un director antiguo no mira esos campos y sigue
+/// funcionando igual; por eso, cuando no hay wifi que anunciar, va un «-» de relleno: lo que viene
+/// detrás nunca se puede confundir con la dirección de la wifi.
+pub fn apuntarse(director: &str, puerto: u16, wifi: Option<&str>, bat: u8, cargando: bool, uso: u16) -> bool {
     (|| -> Result<bool> {
         let mut s = crate::net::connect(director, WAIT)?;
         s.set_read_timeout(Some(WAIT * 2))?;
-        writeln!(s, "SUPERNODO {puerto} {}", wifi.unwrap_or_default())?;
+        let bat = (bat.min(100) / 10) * 10;
+        writeln!(s, "SUPERNODO {puerto} {} b={bat} c={} u={uso}", wifi.unwrap_or("-"), u8::from(cargando))?;
         Ok(read_line(&mut s)? == "OK")
     })()
     .unwrap_or(false)

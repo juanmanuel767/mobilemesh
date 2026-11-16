@@ -25,6 +25,25 @@ static BACKGROUND: AtomicBool = AtomicBool::new(false);
 static PUBLIC: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 /// El supernodo de este teléfono, si está haciendo de relé para otros.
 static SUPERNODO: std::sync::Mutex<Option<crate::supernodo::Supernodo>> = std::sync::Mutex::new(None);
+/// Cómo está la batería de este teléfono: nivel (0-100) y si está enchufado. Lo pone la app, que
+/// es la única que lo sabe; se anuncia al director para que otros elijan bien su supernodo.
+/// Mientras la app no diga nada vale 0, y un supernodo que dice 0 es el último al que se va.
+static BATERIA: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+
+/// Lo guardado en [`BATERIA`]: (nivel 0-100, enchufado).
+fn bateria() -> (u8, bool) {
+    let v = BATERIA.load(Ordering::SeqCst);
+    ((v & 0xff).min(100) as u8, v & (1 << 8) != 0)
+}
+
+/// El supernodo con el que quedarse, midiendo lo que haga falta: el mejor de la lista y, si ya
+/// había uno, también el suyo, para poder compararlos. Devuelve `None` si ninguno contesta.
+fn elegir_supernodo(infos: &[crate::relay::SupernodeInfo], actual: Option<String>, secret: &str, aspirante: &mut Option<(String, u8)>) -> Option<String> {
+    let (candidato, puntos) = crate::relay::mejor(infos, secret)?;
+    let suyos = actual.as_ref().and_then(|a| infos.iter().find(|i| &i.addr == a)).map(|i| crate::relay::score(i, crate::relay::probe_rtt(&crate::relay::supernode_addr(&i.addr))));
+    let actual = actual.as_deref().zip(suyos);
+    Some(crate::relay::decidir_supernodo(actual, (&candidato, puntos), aspirante))
+}
 
 #[derive(Debug, uniffi::Error)]
 pub enum MeshError {
@@ -899,7 +918,8 @@ impl Mesh {
                     publico = crate::upnp::open(port, 3600).ok();
                 }
                 if let Some(p) = publico {
-                    crate::supernodo::apuntarse(&director, p, wifi.as_deref());
+                    let (bat, cargando) = bateria();
+                    crate::supernodo::apuntarse(&director, p, wifi.as_deref(), bat, cargando, vivo.buzones());
                 }
                 vuelta += 1;
                 thread::sleep(Duration::from_secs(60));
@@ -907,6 +927,13 @@ impl Mesh {
         });
         *g = Some(nodo);
         Ok(true)
+    }
+
+    /// Cómo está la batería de este teléfono: `level` de 0 a 100 y si está enchufado. La app lo
+    /// dice cada minuto (en Android ya lo mira para decidir si hace de supernodo). Sin esto, este
+    /// teléfono se anuncia con batería 0 y los demás lo eligen el último.
+    pub fn set_battery(&self, level: u8, charging: bool) {
+        BATERIA.store(u16::from(level.min(100)) | if charging { 1 << 8 } else { 0 }, Ordering::SeqCst);
     }
 
     /// Deja de hacer de relé para otros (las llamadas en curso terminan solas).
@@ -1157,21 +1184,33 @@ impl Mesh {
             thread::spawn(move || {
                 let Ok(store) = Store::open(&dir, me.db_key()) else { return };
                 let mut escuchando: Option<String> = None;
+                // Cuántas veces seguidas ha ganado el mismo aspirante al supernodo actual: solo se
+                // cambia cuando gana claro dos veces, para no estar saltando entre dos parecidos.
+                let mut aspirante: Option<(String, u8)> = None;
                 loop {
-                    let vivos = crate::relay::supernodes(&director).unwrap_or_default();
-                    let actual = store.setting("supernodo").ok().flatten().filter(|s| vivos.contains(s));
-                    let elegido = actual.or_else(|| {
-                        let todos: Vec<&str> = vivos.iter().map(String::as_str).collect();
-                        crate::relay::choose(&todos, &secret).into_iter().next()
-                    });
+                    let elegido = match crate::relay::supernodes_info(&director) {
+                        // Director nuevo: se elige por calidad (enlace, batería y carga).
+                        Ok(infos) if !infos.is_empty() => {
+                            let actual = store.setting("supernodo").ok().flatten().filter(|s| infos.iter().any(|i| &i.addr == s));
+                            elegir_supernodo(&infos, actual, &secret, &mut aspirante)
+                        }
+                        // Director antiguo o sin supernodos: el reparto por sorteo de siempre.
+                        _ => {
+                            let vivos = crate::relay::supernodes(&director).unwrap_or_default();
+                            let actual = store.setting("supernodo").ok().flatten().filter(|s| vivos.contains(s));
+                            actual.or_else(|| {
+                                let todos: Vec<&str> = vivos.iter().map(String::as_str).collect();
+                                crate::relay::choose(&todos, &secret).into_iter().next()
+                            })
+                        }
+                    };
                     let _ = store.set_setting("supernodo", elegido.as_deref());
                     if let Some(sn) = elegido.filter(|sn| escuchando.as_ref() != Some(sn)) {
                         let (atender, secret, d, m, sn2) = (llamada_por_rele(dir.clone(), me.clone(), events.clone()), secret.clone(), dir.clone(), me.clone(), sn.clone());
                         // Se suelta solo cuando se elija otro supernodo.
                         let sigue = move || Store::open(&d, m.db_key()).ok().and_then(|s| s.setting("supernodo").ok().flatten()).as_deref() == Some(sn2.as_str());
                         // Desde su misma casa solo se le llega por la wifi; desde fuera, por la pública.
-                        let (publica, wifi) = crate::relay::supernode_parts(&sn);
-                        let por = wifi.filter(|w| w.parse().is_ok_and(|a| crate::transport::reachable(&a))).unwrap_or(publica).to_string();
+                        let por = crate::relay::supernode_addr(&sn);
                         thread::spawn(move || crate::relay::listen_while(por, secret, sigue, atender));
                         escuchando = store.setting("supernodo").ok().flatten();
                     }

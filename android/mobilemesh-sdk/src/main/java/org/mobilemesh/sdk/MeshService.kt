@@ -483,15 +483,20 @@ object Supernodo {
     /** Encendido por defecto: cuantos más usuarios ayudan, más capacidad tiene la red. */
     fun permitido(c: Context) = prefs(c).getBoolean("supernodo", true)
 
+    /** Batería ahora mismo: (nivel de 0 a 100, enchufado). */
+    fun bateria(c: Context): Pair<Int, Boolean> {
+        val b = c.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val nivel = b?.let { it.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, 0) * 100 / it.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1) } ?: 0
+        return nivel to ((b?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0)
+    }
+
     /** ¿Se cumplen las condiciones ahora? Wifi (sin coste) y batería suficiente o cargando. */
     fun puede(c: Context): Boolean {
         val cm = c.getSystemService(android.net.ConnectivityManager::class.java)
         val red = cm.getNetworkCapabilities(cm.activeNetwork)
         val wifi = red != null && red.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) &&
             red.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-        val b = c.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val nivel = b?.let { it.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, 0) * 100 / it.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1) } ?: 0
-        val cargando = (b?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        val (nivel, cargando) = bateria(c)
         return wifi && (nivel >= BATERIA_MIN || cargando)
     }
 
@@ -503,6 +508,10 @@ object Supernodo {
             while (true) {
                 // Recepción instantánea: sigue a la batería y al cargador en menos de un minuto.
                 Silencio.revisar(app)
+                // El núcleo no puede mirar la batería: se la decimos para que, cuando este teléfono
+                // haga de supernodo, los demás sepan si les conviene apoyarse en él.
+                val (nivel, cargando) = bateria(app)
+                runCatching { m.setBattery(nivel.toUByte(), cargando) }
                 val toca = permitido(app) && puede(app)
                 when {
                     // Si falla (otra app del teléfono ya es supernodo), se reintenta al minuto.
