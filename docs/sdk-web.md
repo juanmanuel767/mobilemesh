@@ -18,7 +18,7 @@ Tu página ⇄ trabajador con el núcleo (WebAssembly) ⇄ WebSocket ⇄ relé �
 curl -sL https://github.com/juanmanuel767/mobilemesh/releases/latest/download/mobilemesh-web.tar.gz | tar xz
 ```
 
-**Con npm:** el paquete está preparado en `web/package.json` pero todavía no está publicado. Cuando lo esté, bastará con `npm install mobilemesh` e importar desde `"mobilemesh"`.
+**Con npm:** `npm install mobilemesh` e importa desde `"mobilemesh"`. El paquete trae los tipos de TypeScript, así que funciona con autocompletado sin instalar nada más.
 
 Copia a tu web `mobilemesh.js`, `red.js`, `nucleo-worker.js` y la carpeta `pkg/` (deben quedar juntos).
 
@@ -142,9 +142,9 @@ documento es `{ id, campos }`, donde `campos` es un objeto de cadenas.
 
 ## 4. Integrar en tu framework
 
-En todos los casos hacen falta las cabeceras COOP/COEP de la sección 2. Con npm, el paquete todavía
-no está publicado: mientras tanto instala desde el `.tar.gz` de la release o copia `mobilemesh.js`,
-`red.js`, `nucleo-worker.js` y `pkg/` al proyecto. Las recetas de Vite y Next.js de la sección 2 se
+En todos los casos hacen falta las cabeceras COOP/COEP de la sección 2. Instala con
+`npm install mobilemesh`; si no usas npm, descarga el `.tar.gz` de la release o copia
+`mobilemesh.js`, `red.js`, `nucleo-worker.js` y `pkg/` al proyecto. Las recetas de Vite y Next.js de la sección 2 se
 conservan; estas las reutilizan.
 
 ### React (Vite)

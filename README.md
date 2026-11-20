@@ -40,7 +40,7 @@
 | 💸 **Gratis de verdad** | Sin facturas por usuarios, lecturas o almacenamiento: los datos no ocupan servidores. |
 | 🏆 **Colecciones públicas** | Lo que la app quiere que vean todos (rankings, catálogos, tablones) en una línea; el resto sigue privado. |
 | 🌐 **Crece con sus usuarios** | Los móviles que lo permiten (en wifi y con batería) ayudan a conectar a los demás: cuantos más usuarios, más capacidad. |
-| 🧑‍💻 **Para programadores** | SDK para Android, React Native y web, y servidor MCP para que una IA cree apps con él. |
+| 🧑‍💻 **Para programadores** | SDK para Android, React Native, web, Node.js y Flutter, y servidor MCP para que una IA cree apps con él. |
 
 > 💡 Es un proyecto joven. Si te gusta, pruébalo, déjale una ⭐ y cuéntanos qué mejorarías.
 
@@ -125,23 +125,31 @@ El núcleo en Rust ya va dentro y funciona en móviles reales (`arm64-v8a`) y en
 
 ### Web
 
-**1. Un solo comando** en la carpeta de tu proyecto (no hace falta instalar Rust ni compilar nada):
+Funciona con cualquier frontend: **React, Vue, Angular, Ionic** o JavaScript a secas.
+
+**1. Instálalo** con npm (el paquete incluye tipos TypeScript):
+
+```sh
+npm install mobilemesh
+```
+
+Si no usas npm, baja el paquete ya compilado (no hace falta instalar Rust ni compilar nada):
 
 ```sh
 curl -sL https://github.com/juanmanuel767/mobilemesh/releases/latest/download/mobilemesh-web.tar.gz | tar xz
 ```
 
-El paquete `npm install mobilemesh` está preparado y se publicará en breve; hasta entonces usa el comando de arriba.
-
 **2. Úsalo:**
 
 ```js
-import { MobileMesh } from "./mobilemesh/mobilemesh.js";
+import { MobileMesh } from "mobilemesh";   // o "./mobilemesh/mobilemesh.js" si bajaste el tar.gz
 
 // Sin appId, la marca de tu app es el dominio de la página.
-const mesh = await MobileMesh.start({ appId: "mi-app" });  // crea la cuenta la primera vez
-await mesh.save("tareas", "t1", "titulo", "Comprar pan");  // cifrado y en el dispositivo
-console.log(await mesh.all("tareas"));
+const mesh = await MobileMesh.start({ appId: "mi-app" });   // crea la cuenta la primera vez
+
+const tareas = mesh.collection("tareas");
+await tareas.save("t1", { titulo: "Comprar pan", hecha: "no" });   // cifrado y en el dispositivo
+const pendientes = await tareas.where("hecha", "==", "no").sortBy("titulo").limit(10).get();
 ```
 
 **3. Dos cabeceras** en tu servidor (el SDK usa memoria compartida):
@@ -159,7 +167,47 @@ export default {
 };
 ```
 
-Para probar sin nada más: `python3 mobilemesh/servir.py 8080` y abre `http://127.0.0.1:8080`. Mensajes, contactos y colecciones compartidas: [guía del SDK web](docs/sdk-web.md).
+Para probar sin nada más: `python3 mobilemesh/servir.py 8080` y abre `http://127.0.0.1:8080`. Recetas para React, Vue, Angular e Ionic (con sus cabeceras), mensajes y colecciones compartidas: [guía del SDK web](docs/sdk-web.md).
+
+### Node.js
+
+Binding nativo con napi-rs sobre el mismo núcleo. Se compila con `cargo build --release` dentro de `node/`:
+
+```sh
+cd node && cargo build --release
+```
+
+```js
+const { Mesh } = require("mobilemesh-node");
+
+const mesh = Mesh.start("./datos", "mi-app");   // carpeta local y marca de la app
+mesh.save("notas", "n1", { texto: "hola" });
+console.log(JSON.parse(mesh.all("notas")));
+```
+
+La marca (`mi-app`) separa tu red: solo las copias con la misma marca se comunican. Más en [`node/README.md`](node/README.md) y el ejemplo [`node/prueba.js`](node/prueba.js).
+
+### Flutter (Android)
+
+Plugin de Dart sobre el SDK de Android. Necesita `minSdk = 28`; **iOS está pendiente** (falta el SDK de Swift).
+
+```yaml
+# pubspec.yaml
+dependencies:
+  mobilemesh:
+    path: ../mobilemesh/flutter   # o la URL de git del repositorio
+```
+
+```dart
+import 'package:mobilemesh/mobilemesh.dart';
+
+final mesh = await MobileMesh.start();
+final notas = mesh.collection('notas');
+await notas.save('n1', {'texto': 'hola'});
+print((await notas.all()).first.fields['texto']);   // hola
+```
+
+La marca se toma de `android/app/src/main/assets/mobilemesh.properties` (`appId`) o, si falta, del nombre del paquete. Ejemplo completo: [`flutter/example`](flutter/example) · [guía de Flutter](flutter/README.md).
 
 ## ⚙️ Cómo funciona
 
@@ -186,6 +234,15 @@ flowchart LR
 
 ## ✅ Estado
 
+| Plataforma | Estado |
+|---|---|
+| Android (Kotlin) | ✅ Funciona y probado en móviles reales |
+| Web (React, Vue, Angular, Ionic o JS) | ✅ Funciona y probado |
+| React Native | ✅ Funciona y probado |
+| Node.js | ✅ Funciona y probado |
+| Flutter (Android) | ✅ Funciona y probado |
+| iOS / Swift (iPhone) | ⏳ Pendiente: hace falta un Mac |
+
 **Probado en móviles reales** (TECNO KJ5, Redmi A5 y nubia Z2465N), en la misma wifi y en redes distintas:
 
 - Cuentas con usuario y contraseña, varios dispositivos por cuenta, identidad protegida con Android Keystore.
@@ -207,6 +264,8 @@ flowchart LR
 | React Native | [docs/react-native.md](docs/react-native.md) |
 | Android | [docs/sdk.md](docs/sdk.md) · [`examples/notas`](examples/notas) |
 | Web | [docs/sdk-web.md](docs/sdk-web.md) |
+| Node.js | [`node/README.md`](node/README.md) · [`node/prueba.js`](node/prueba.js) |
+| Flutter | [`flutter/README.md`](flutter/README.md) · [`flutter/example`](flutter/example) |
 | Referencia de funciones (generada del código) | [docs/referencia-api.md](docs/referencia-api.md) |
 | Mapa del proyecto: dónde está cada cosa (generado del código) | [docs/mapa.md](docs/mapa.md) |
 | Pagos | [`examples/ayudante-pagos`](examples/ayudante-pagos) |
