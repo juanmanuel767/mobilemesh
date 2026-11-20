@@ -52,6 +52,8 @@ self.onmessage = async ({ data }) => {
     }
   } else if (data.t === "llamar") {
     try {
+      // Toda orden expuesta por el núcleo (ver_datos, consultar, guardar_dato, …) se despacha aquí
+      // por su nombre; las consultas usan "consultar".
       self.postMessage({ t: "r", id: data.id, ok: await nucleo[data.fn](...data.args) });
     } catch (e) {
       self.postMessage({ t: "r", id: data.id, error: String(e?.message ?? e) });

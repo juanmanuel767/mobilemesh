@@ -12,12 +12,18 @@
   "type": "module",
   "main": "./mobilemesh.js",
   "module": "./mobilemesh.js",
+  "types": "./mobilemesh.d.ts",
   "exports": {
-    ".": "./mobilemesh.js",
+    ".": {
+      "types": "./mobilemesh.d.ts",
+      "import": "./mobilemesh.js",
+      "default": "./mobilemesh.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "mobilemesh.js",
+    "mobilemesh.d.ts",
     "red.js",
     "nucleo-worker.js",
     "pkg/mobilemesh_core.js",

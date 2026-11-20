@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Prueba de colecciones y consultas</title>
+<pre id="salida">cargando…</pre>
+<script type="module">
+  // Comprueba la API de colecciones del SDK web: guardar documentos, listarlos y consultarlos
+  // con filtro, orden y límite. Deja el resultado en window.resultado para una prueba sin pantalla.
+  import { MobileMesh } from "./mobilemesh.js";
+  const salida = document.getElementById("salida");
+  const linea = (t) => (salida.textContent += t + "\n");
+  salida.textContent = "";
+  let fallos = 0;
+  const comprobar = (nombre, condicion, visto) => {
+    if (!condicion) fallos++;
+    linea(`${condicion ? "OK  " : "FALLA"} ${nombre}${condicion ? "" : ` → ${JSON.stringify(visto)}`}`);
+  };
+
+  try {
+    const mesh = await MobileMesh.start({ appId: "prueba-consultas" });
+    linea(`cuenta: ${(await mesh.account()).slice(0, 16)}…`);
+
+    const jugadores = mesh.collection("jugadores");
+    await jugadores.save("ana", { nombre: "Ana", puntos: "120" });
+    await jugadores.save("beto", { nombre: "Beto", puntos: "300" });
+    await jugadores.save("caro", { nombre: "Caro", puntos: "50" });
+
+    const todos = await jugadores.all();
+    comprobar("all() devuelve los tres", Object.keys(todos ?? {}).length >= 3 || (todos?.length ?? 0) >= 3, todos);
+
+    const mejores = await jugadores.where("puntos", ">", "100").get();
+    comprobar("where(puntos > 100) devuelve dos", (mejores?.length ?? 0) === 2, mejores);
+
+    const porPuntos = await jugadores.where("puntos", "existe", "").sortBy("puntos", true).limit(1).get();
+    comprobar("sortBy + limit devuelve solo el primero", (porPuntos?.length ?? 0) === 1, porPuntos);
+
+    const uno = await jugadores.where("nombre", "==", "Ana").get();
+    comprobar("where(nombre == Ana) encuentra a Ana", (uno?.length ?? 0) === 1, uno);
+  } catch (e) {
+    fallos++;
+    linea(`error: ${e.message}`);
+  }
+  linea(fallos === 0 ? "RESULTADO: TODO BIEN" : `RESULTADO: ${fallos} FALLOS`);
+  window.resultado = salida.textContent;
+</script>

@@ -1,5 +1,7 @@
 # Guía de MobileMesh para React Native (Android)
 
+> Contrato común de la API: [`docs/api.md`](api.md). Todos los SDK ofrecen las mismas operaciones con los mismos nombres.
+
 Base de datos, cuentas por nombre de usuario, mensajes, archivos y avisos, sin servidores de datos.
 
 ## 1. Instalar (un comando)

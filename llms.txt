@@ -6,6 +6,7 @@
 
 - [AGENTS.md](AGENTS.md): manual para agentes de IA: integración en Android, qué sabe hacer el backend, cómo comprobarlo y errores típicos.
 - [README.md](README.md): presentación del proyecto, instalación rápida y primeros pasos.
+- [docs/api.md](docs/api.md): contrato común de la API que deben cumplir todos los SDK, con cobertura por plataforma, huecos y errores comunes.
 - [docs/referencia-api.md](docs/referencia-api.md): lista completa de funciones de Android, web, React Native, CLI `mesh` y MCP, generada del código.
 - [docs/mapa.md](docs/mapa.md): dónde está cada archivo del repositorio y para qué sirve, generado del código.
 - [docs/sdk.md](docs/sdk.md): guía de Android: cuenta, colecciones, mensajes, archivos, permisos, relés y recuperación.

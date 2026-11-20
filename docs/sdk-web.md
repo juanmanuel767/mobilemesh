@@ -1,5 +1,7 @@
 # Guía de MobileMesh para la web
 
+> Contrato común de la API: [`docs/api.md`](api.md). Todos los SDK ofrecen las mismas operaciones con los mismos nombres.
+
 El mismo núcleo que en Android, compilado a WebAssembly. Los datos se guardan cifrados en el
 navegador (OPFS) y los mensajes viajan cifrados de extremo a extremo por los relés. Sin servidores
 de datos, sin Firebase, sin Supabase.
@@ -122,7 +124,163 @@ antiguas no se comunican con las nuevas. Los datos guardados se conservan.
 
 La API está en inglés. Los nombres en español (`iniciar`, `guardar`, `datos`, `enviar`…) siguen funcionando, pero avisan una vez por consola de que están obsoletos. Los permisos también aceptan `"leer"`, `"escribir"` y `"nada"`.
 
-## 4. Diferencias con Android
+### Colecciones y consultas
+
+`mesh.collection(nombre)` agrupa el guardado y la consulta de documentos. `save(id, campos)` guarda
+todos los campos de un objeto (los valores se convierten a texto) y `where` empieza una consulta
+encadenable con `sortBy`, `limit` y `get`:
+
+```js
+const jugadores = mesh.collection("jugadores");
+await jugadores.save("ana", { nombre: "Ana", puntos: "120" });
+const todos = await jugadores.all();   // [{ id: "ana", campos: { nombre: "Ana", puntos: "120" } }]
+const mejores = await jugadores.where("puntos", ">", "100").sortBy("puntos", true).limit(10).get();
+```
+
+Operadores: `==`, `!=`, `<`, `<=`, `>`, `>=`, `contiene`, `empieza` y `existe`. El formato de cada
+documento es `{ id, campos }`, donde `campos` es un objeto de cadenas.
+
+## 4. Integrar en tu framework
+
+En todos los casos hacen falta las cabeceras COOP/COEP de la sección 2. Con npm, el paquete todavía
+no está publicado: mientras tanto instala desde el `.tar.gz` de la release o copia `mobilemesh.js`,
+`red.js`, `nucleo-worker.js` y `pkg/` al proyecto. Las recetas de Vite y Next.js de la sección 2 se
+conservan; estas las reutilizan.
+
+### React (Vite)
+
+```sh
+npm create vite@latest mi-app -- --template react
+cd mi-app && npm install
+```
+
+`vite.config.js`, reutilizando el de la sección 2:
+
+```js
+import { defineConfig } from "vite";
+
+const cabeceras = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+};
+
+export default defineConfig({
+  server: { headers: cabeceras },
+  preview: { headers: cabeceras },
+  optimizeDeps: { exclude: ["mobilemesh"] },
+  worker: { format: "es" },
+});
+```
+
+Uso mínimo en un componente (solo en el navegador):
+
+```jsx
+import { useEffect } from "react";
+import { MobileMesh } from "mobilemesh";
+
+export default function App() {
+  useEffect(() => {
+    (async () => {
+      const mesh = await MobileMesh.start({ appId: "mi-web" });
+      await mesh.collection("tareas").save("t1", { titulo: "Comprar pan" });
+    })();
+  }, []);
+  return null;
+}
+```
+
+### Vue (Vite)
+
+```sh
+npm create vite@latest mi-app -- --template vue
+cd mi-app && npm install
+```
+
+El `vite.config.js` es exactamente el de React (mismas cabeceras, `optimizeDeps.exclude` y
+`worker.format`). Uso mínimo:
+
+```vue
+<script setup>
+import { onMounted } from "vue";
+import { MobileMesh } from "mobilemesh";
+
+onMounted(async () => {
+  const mesh = await MobileMesh.start({ appId: "mi-web" });
+  await mesh.collection("tareas").save("t1", { titulo: "Comprar pan" });
+});
+</script>
+```
+
+### Angular (CLI)
+
+```sh
+ng new mi-app --standalone
+cd mi-app && npm install mobilemesh
+```
+
+En `angular.json`, dentro del proyecto y de `architect.serve.options`, añade las cabeceras del
+servidor de desarrollo:
+
+```json
+"serve": {
+  "options": {
+    "headers": {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp"
+    }
+  }
+}
+```
+
+Si tu versión de Angular CLI no acepta `headers` en `serve`, sirve `dist/` con un servidor propio
+(nginx/Apache o `web/servir.py`) que las añada; un `proxy.conf.json` no sirve para esto porque
+gestiona peticiones salientes, no cabeceras de respuesta. Uso mínimo:
+
+```ts
+import { Component, OnInit } from "@angular/core";
+import { MobileMesh } from "mobilemesh";
+
+@Component({ selector: "app-root", standalone: true, template: "" })
+export class AppComponent implements OnInit {
+  async ngOnInit() {
+    const mesh = await MobileMesh.start({ appId: "mi-web" });
+    await mesh.collection("tareas").save("t1", { titulo: "Comprar pan" });
+  }
+}
+```
+
+Si el empaquetador de Angular no copia `nucleo-worker.js` ni `pkg/`, copia esos archivos a
+`src/assets/mobilemesh/` y cárgalos desde ahí; no los dejes fuera del build.
+
+### Ionic (Capacitor)
+
+```sh
+ionic start mi-app blank --type=react
+cd mi-app && npm install mobilemesh
+```
+
+En el servidor de desarrollo (`ionic serve`, que usa Vite en React/Vue) añade las mismas cabeceras
+en `vite.config.ts`:
+
+```ts
+server: {
+  headers: {
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+  },
+},
+```
+
+Uso mínimo, igual que en React/Vue: `MobileMesh.start({ appId: "mi-web" })` dentro de un
+`useEffect`/`onMounted` y `collection("tareas").save(...)`.
+
+**Aviso para Android con Capacitor:** las cabeceras del servidor de desarrollo no llegan al WebView
+de la app. En Android dentro de Capacitor hay que añadir COOP/COEP a las respuestas del WebView en
+el lado nativo; si no, `crossOriginIsolated` es falso y `MobileMesh.start()` lanza el error de
+cabeceras. La forma exacta de interceptar esas respuestas depende de la versión de Capacitor y de su
+esquema local, así que no la damos aquí como receta fija.
+
+## 5. Diferencias con Android
 
 | | Android | Web |
 |---|---|---|

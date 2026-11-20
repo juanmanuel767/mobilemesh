@@ -264,6 +264,38 @@ pub fn ver_datos(coleccion: &str) -> Result<String, JsError> {
     serde_json::to_string(&rows).map_err(js)
 }
 
+/// Filtro tal como llega desde JavaScript (`value` es la codificación del núcleo).
+#[derive(serde::Deserialize)]
+struct FiltroConsulta {
+    field: String,
+    op: String,
+    value: String,
+}
+
+/// Consulta con filtros, orden y límite. `filtros` es JSON: `[{"field":"edad","op":">","value":"18"}]`.
+/// Devuelve JSON con los documentos: `[{"id": …, "campos": {…}}]` (el mismo formato que `ver_datos`).
+#[wasm_bindgen]
+pub fn consultar(coleccion: &str, filtros: &str, ordenar_por: Option<String>, descendente: bool, limite: Option<u32>) -> Result<String, JsError> {
+    let (_, store) = abrir().map_err(js)?;
+    let filtros: Vec<crate::sync::Filter> = serde_json::from_str::<Vec<FiltroConsulta>>(filtros)
+        .map_err(js)?
+        .into_iter()
+        .map(|f| crate::sync::Filter { field: f.field, op: f.op, value: f.value })
+        .collect();
+    let rows: Vec<serde_json::Value> = crate::sync::query(
+        &store,
+        coleccion,
+        &filtros,
+        ordenar_por.as_deref().map(|f| (f, descendente)),
+        limite.map(|n| n as usize),
+    )
+    .map_err(js)?
+    .into_iter()
+    .map(|r| serde_json::json!({"id": r.id, "campos": r.fields.into_iter().map(|(k, v)| (k, serde_json::Value::String(v))).collect::<serde_json::Map<_, _>>()}))
+    .collect();
+    serde_json::to_string(&rows).map_err(js)
+}
+
 /// Mi IP pública según el relé (prueba de que el núcleo habla por la red desde el navegador).
 #[wasm_bindgen]
 pub fn quien(relay: &str) -> Result<String, JsError> {

@@ -100,6 +100,80 @@ export class MobileMesh {
   }
 
   /**
+   * Opens a collection: { save(id, fields), all(), where(field, op, value) }.
+   * Abre una colección: { save(id, fields), all(), where(field, op, value) }.
+   *
+   * `save` guarda los campos de un objeto uno a uno; `where` devuelve una consulta encadenable.
+   */
+  collection(name) {
+    const mesh = this;
+    return {
+      /**
+       * Saves every field of an object in one record.
+       * Guarda todos los campos de un objeto en un registro.
+       */
+      async save(id, fields) {
+        for (const [field, value] of Object.entries(fields ?? {})) {
+          await mesh.save(name, id, field, value);
+        }
+      },
+
+      /**
+       * Records of the collection: [{id, campos: {…}}].
+       * Registros de la colección: [{id, campos: {…}}].
+       */
+      all() {
+        return mesh.all(name);
+      },
+
+      /**
+       * Starts a query with a filter: where(field, op, value).
+       * Empieza una consulta con un filtro: where(field, op, value).
+       */
+      where(field, op, value) {
+        return mesh.#consulta(name, [{ field, op, value: String(value) }]);
+      },
+    };
+  }
+
+  /**
+   * Chainable query: where(field, op, value).sortBy(field, descending).limit(n).get().
+   * Consulta encadenable: where(field, op, value).sortBy(field, descending).limit(n).get().
+   *
+   * Operadores: ==, !=, <, <=, >, >=, contiene, empieza, existe.
+   */
+  #consulta(name, filters) {
+    const mesh = this;
+    let orderBy = null;
+    let descending = false;
+    let max = null;
+    const query = {
+      /** Adds another filter. / Añade otro filtro. */
+      where(field, op, value) {
+        filters.push({ field, op, value: String(value) });
+        return query;
+      },
+      /** Orders by a field. / Ordena por un campo. */
+      sortBy(field, descendingOrder = false) {
+        orderBy = field;
+        descending = Boolean(descendingOrder);
+        return query;
+      },
+      /** Caps the number of documents. / Limita el número de documentos. */
+      limit(n) {
+        max = n;
+        return query;
+      },
+      /** Runs the query and returns [{id, campos: {…}}]. / Ejecuta la consulta y devuelve [{id, campos: {…}}]. */
+      async get() {
+        const json = await mesh.#llamar("consultar", name, JSON.stringify(filters), orderBy, descending, max);
+        return JSON.parse(json);
+      },
+    };
+    return query;
+  }
+
+  /**
    * Records of a collection: [{id, campos: {…}}].
    * Registros de una colección: [{id, campos: {…}}].
    */

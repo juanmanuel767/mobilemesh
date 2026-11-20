@@ -1,5 +1,7 @@
 # Guía de MobileMesh para programadores (Android)
 
+> Contrato común de la API: [`docs/api.md`](api.md). Todos los SDK ofrecen las mismas operaciones con los mismos nombres.
+
 MobileMesh te da base de datos, cuentas, mensajes, archivos, permisos y sincronización **sin
 servidores**: cada usuario guarda sus datos cifrados en su teléfono y los comparte cifrados de
 extremo a extremo. No necesitas Firebase ni Supabase.
