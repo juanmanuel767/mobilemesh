@@ -1,0 +1,16 @@
+# MobileMesh
+
+> Base de datos y mensajería entre dispositivos sin servidores: cada usuario guarda sus datos cifrados en su teléfono y los comparte cifrado de extremo a extremo con sus contactos.
+
+## Documentación
+
+- [AGENTS.md](AGENTS.md): manual para agentes de IA: integración en Android, qué sabe hacer el backend, cómo comprobarlo y errores típicos.
+- [README.md](README.md): presentación del proyecto, instalación rápida y primeros pasos.
+- [docs/referencia-api.md](docs/referencia-api.md): lista completa de funciones de Android, web, React Native, CLI `mesh` y MCP, generada del código.
+- [docs/mapa.md](docs/mapa.md): dónde está cada archivo del repositorio y para qué sirve, generado del código.
+- [docs/sdk.md](docs/sdk.md): guía de Android: cuenta, colecciones, mensajes, archivos, permisos, relés y recuperación.
+- [docs/sdk-web.md](docs/sdk-web.md): guía del SDK web sobre WebAssembly: cabeceras, arranque, datos y diferencias con Android.
+- [docs/react-native.md](docs/react-native.md): guía del puente de React Native para Android.
+- [docs/protocolo.md](docs/protocolo.md): descripción del protocolo para revisarlo o hacer una implementación compatible.
+- [docs/mcp.md](docs/mcp.md): servidor `mesh-mcp` para que una IA use MobileMesh por MCP.
+- [docs/donar-un-rele.md](docs/donar-un-rele.md): cómo montar un relé y un guardián para ayudar a la red.
