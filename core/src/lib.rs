@@ -28,7 +28,7 @@ pub(crate) use web_time as tiempo;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 #[cfg(not(target_arch = "wasm32"))]
-mod ffi;
+pub mod ffi;
 
 #[cfg(not(target_arch = "wasm32"))]
 uniffi::setup_scaffolding!();

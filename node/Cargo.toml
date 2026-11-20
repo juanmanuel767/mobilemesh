@@ -1,0 +1,16 @@
+[package]
+name = "mobilemesh-node"
+version = "0.2.1"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", default-features = false, features = ["napi4"] }
+napi-derive = "2"
+mobilemesh-core = { path = "../core" }
+serde_json = "1"
+
+[build-dependencies]
+napi-build = "2"

@@ -1,0 +1,8 @@
+{
+  "name": "mobilemesh-node",
+  "version": "0.2.1",
+  "main": "mobilemesh-node.linux-x64-gnu.node",
+  "scripts": {
+    "build": "napi build --platform --release"
+  }
+}

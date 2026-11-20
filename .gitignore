@@ -27,3 +27,5 @@ examples/lote-a/.gradle/
 examples/lote-b/.gradle/
 # Paquete del SDK web que genera web/construir.sh
 mobilemesh-web.tar.gz
+# Librería compilada del SDK de Node
+node/mobilemesh.node

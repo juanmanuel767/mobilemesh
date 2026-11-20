@@ -8,7 +8,15 @@
     "url": "git+https://github.com/juanmanuel767/mobilemesh.git",
     "directory": "web"
   },
-  "keywords": ["mobilemesh", "database", "messaging", "p2p", "wasm", "serverless", "local-first"],
+  "keywords": [
+    "mobilemesh",
+    "database",
+    "messaging",
+    "p2p",
+    "wasm",
+    "serverless",
+    "local-first"
+  ],
   "type": "module",
   "main": "./mobilemesh.js",
   "module": "./mobilemesh.js",
@@ -22,6 +30,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "README.md",
     "mobilemesh.js",
     "mobilemesh.d.ts",
     "red.js",
