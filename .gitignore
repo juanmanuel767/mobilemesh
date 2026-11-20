@@ -34,3 +34,5 @@ flutter/example/build/
 flutter/example/.dart_tool/
 flutter/example/android/.gradle/
 flutter/.dart_tool/
+flutter/android/.gradle/
+flutter/android/build/
