@@ -1,0 +1,26 @@
+name: mobilemesh
+description: Base de datos y mensajería cifrada entre dispositivos, sin servidores. Por ahora solo Android.
+version: 0.2.1
+homepage: https://github.com/juanmanuel767/mobilemesh
+repository: https://github.com/juanmanuel767/mobilemesh
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: org.mobilemesh.flutter
+        pluginClass: MobileMeshPlugin
+      # iOS queda fuera a propósito: el SDK de Swift todavía está pendiente.
+      # Cuando exista, se añadirá aquí con su package y pluginClass.

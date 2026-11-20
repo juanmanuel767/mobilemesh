@@ -1,0 +1,55 @@
+// Plugin de MobileMesh para Flutter (solo Android). El SDK de Android llega compilado desde JitPack.
+group "org.mobilemesh.flutter"
+version "0.2.1"
+
+buildscript {
+    ext.kotlin_version = "2.2.0"
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.7.3"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+// JitPack para todo el proyecto y mavenLocal para probar el SDK sin publicarlo.
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        mavenLocal()
+        maven { url "https://jitpack.io" }
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "org.jetbrains.kotlin.android"
+
+android {
+    namespace "org.mobilemesh.flutter"
+    compileSdk 35
+
+    defaultConfig {
+        minSdk 28 // lo exige el SDK de MobileMesh (Keystore)
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
+    }
+}
+
+dependencies {
+    // La app puede probar otra versión del SDK con `ext { mobilemeshVersion = "…" }` en su build.gradle.
+    implementation "com.github.juanmanuel767:mobilemesh:${rootProject.ext.has("mobilemeshVersion") ? rootProject.ext.get("mobilemeshVersion") : "v0.2.1"}"
+}
