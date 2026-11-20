@@ -11,6 +11,10 @@ npm install github:juanmanuel767/mobilemesh#v0.2.1
 En `android/build.gradle` de tu app: `minSdkVersion = 28`. Recompila la app (`npx react-native run-android`).
 El puente baja solo el SDK de Android desde JitPack.
 
+La marca de la app no se toca desde JavaScript: el puente usa el SDK de Android y **hereda su
+marca** (el archivo `src/main/assets/mobilemesh.properties` o, si no está, el nombre del paquete).
+No hay que hacer nada en React Native.
+
 ## 2. Usar
 
 ```js

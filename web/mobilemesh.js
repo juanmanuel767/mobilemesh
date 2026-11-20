@@ -20,15 +20,18 @@ export class MobileMesh {
    * Starts MobileMesh in this page: loads the core in a worker and connects the network.
    * Arranca MobileMesh en la página: carga el núcleo en un trabajador y conecta la red.
    */
-  static async start() {
+  static async start({ appId } = {}) {
     if (!self.crossOriginIsolated) throw new Error("La página necesita las cabeceras COOP y COEP (ver mobilemesh.js)");
+    // Marca («lote») de esta aplicación: solo las páginas con la misma marca se comunican entre
+    // sí. Si no se indica, se usa el dominio, que ya es igual para todos tus usuarios.
+    const marca = (appId ?? location.hostname ?? "").toLowerCase().replace(/[^a-z0-9._-]/g, "-") || "localhost";
     const canal = new MessageChannel();
     iniciarRed(canal.port1);
     const worker = new Worker(new URL("./nucleo-worker.js", import.meta.url), { type: "module" });
     const m = new MobileMesh(worker);
     await new Promise((listo, falla) => {
       worker.onmessage = ({ data }) => (data.t !== "listo" ? m.#respuesta(data) : data.error ? falla(new Error(data.error)) : listo());
-      worker.postMessage({ t: "iniciar", red: canal.port2 }, [canal.port2]);
+      worker.postMessage({ t: "iniciar", red: canal.port2, appId: marca }, [canal.port2]);
     });
     worker.onmessage = ({ data }) => m.#respuesta(data);
     return m;
@@ -74,6 +77,26 @@ export class MobileMesh {
    */
   save(collection, record, field, value) {
     return this.#llamar("guardar_dato", collection, record, field, String(value));
+  }
+
+  /**
+   * Saves a value of any size (it is split internally if needed).
+   * Guarda un valor de cualquier tamaño (por dentro se parte si hace falta).
+   *
+   * Los valores normales están topados a 8 KB porque cada uno viaja como una
+   * operación de sincronización. Para un documento, un texto largo o una imagen
+   * en base64, usa este método: por fuera es un solo valor.
+   */
+  saveLarge(collection, record, field, value) {
+    return this.#llamar("guardar_grande", collection, record, field, String(value));
+  }
+
+  /**
+   * Reads a value saved with saveLarge(), already joined. Empty string if missing.
+   * Lee un valor guardado con saveLarge(), ya unido. Cadena vacía si no está.
+   */
+  readLarge(collection, record, field) {
+    return this.#llamar("leer_grande", collection, record, field);
   }
 
   /**
@@ -164,7 +187,7 @@ export class MobileMesh {
 
 // Alias en español (obsoletos). Fuera de la clase a propósito: la API publicada es la inglesa.
 // Cada uno es una línea que avisa una vez y llama al nombre inglés, con los mismos argumentos.
-MobileMesh.iniciar = function iniciar() { obsoleto("iniciar", "start"); return MobileMesh.start(); };
+MobileMesh.iniciar = function iniciar() { obsoleto("iniciar", "start"); return MobileMesh.start(...arguments); };
 const alias = {
   cuenta: ["account", function cuenta() { return this.account(); }],
   guardar: ["save", function guardar(coleccion, registro, campo, valor) { return this.save(coleccion, registro, campo, valor); }],

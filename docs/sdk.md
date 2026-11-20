@@ -27,6 +27,26 @@ proyecto nuevo: AGP 8.7.3, Gradle 8.9, Kotlin 2.2.0, `compileSdk` 35.
 
 La librería añade sola sus permisos (red, avisos, segundo plano). Todos los tipos de esta guía (`MobileMesh`, `BackgroundMode`, `Permissions`, `MeshCollection`, `Document`, `Message`, `AccountState`, `MobileMeshError`…) viven en el paquete `org.mobilemesh.sdk`.
 
+### La marca de la app (su «lote»)
+
+Cada app que usa MobileMesh tiene una **marca** (App ID). Solo las copias con la misma marca se
+comunican entre sí: dos apps distintas nunca se mezclan, aunque compartan los mismos relés.
+
+En Android se genera sola la primera vez que compilas. Añade una línea al `build.gradle.kts` de tu
+app, con la ruta a `tools/mobilemesh.gradle.kts` (ajústala a donde lo tengas):
+
+```kotlin
+apply(from = "../../tools/mobilemesh.gradle.kts")
+```
+
+La primera compilación crea `src/main/assets/mobilemesh.properties` con `appId=mm-<32 hex>`.
+Guárdalo en el repositorio y no lo borres: viaja dentro del APK y es la misma marca en todas las
+copias que publiques, así que todos tus usuarios se encuentran entre sí. Si el archivo falta, el
+SDK usa el nombre del paquete.
+
+> Cambio de protocolo respecto a v0.2.1: cambian el buzón del relé, el saludo y las invitaciones.
+> Las versiones antiguas no se comunican con las nuevas. Los datos guardados se conservan.
+
 ## 1. Empezar
 
 ```kotlin

@@ -7,6 +7,7 @@ pub mod directorio;
 pub mod funciones;
 pub mod guardian;
 pub mod identity;
+pub mod metricas;
 pub mod net;
 pub mod nombres;
 pub mod publico;
@@ -95,7 +96,15 @@ pub fn deliver(store: &Store, me: &Identity, peer: &str, addr: &str) -> Result<u
 
 /// Conecta con la cuenta `expect` y hace el intercambio de listas de retirados (Fase 10).
 pub fn connect(store: &Store, me: &Identity, route: &str, expect: &[u8]) -> Result<Session> {
-    let mut s = Session::connect(route, me, expect)?;
+    let mut s = Session::connect(route, me, expect, &crate::nombres::app_de(store)?)?;
+    access::exchange(&mut s, store, me)?;
+    Ok(s)
+}
+
+/// Conecta con una pieza compartida (guía de nombres, colecciones públicas, guardián). Estas no
+/// pertenecen a ninguna app: se habla con ellas por el carril común, no con el App ID propio.
+pub fn connect_infra(store: &Store, me: &Identity, route: &str, expect: &[u8]) -> Result<Session> {
+    let mut s = Session::connect(route, me, expect, nombres::APP_INFRA)?;
     access::exchange(&mut s, store, me)?;
     Ok(s)
 }
@@ -211,7 +220,7 @@ impl Drop for Slot {
 
 /// Atiende una conexión entrante; solo acepta contactos conocidos. Devuelve cuántos mensajes recibió.
 pub fn serve(store: &Store, me: &Identity, stream: impl net::Conn + 'static) -> Result<usize> {
-    let mut s = Session::accept(stream, me)?;
+    let mut s = Session::accept(stream, me, &crate::nombres::app_de(store)?)?;
     let peer = to_hex(&s.peer);
     // Se aceptan los contactos y los otros dispositivos de mi propia cuenta. Un ayudante «abierto»
     // (funciones de servidor) acepta a cualquiera y lo apunta como contacto.
@@ -598,24 +607,35 @@ pub fn export_file(store: &Store, peer: &str, outgoing: bool, id: &str, dst: &Pa
     })
 }
 
-const INVITE: &str = "mobilemesh:2:";
+const INVITE: &str = "mobilemesh:3:";
 
 /// Invitación para que otro dispositivo nos añada (va en el QR). Solo lleva datos públicos.
-pub fn invite(me: &Identity, addr: &str) -> String {
-    format!("{INVITE}{}:{addr}", me.id())
+pub fn invite(me: &Identity, app: &str, addr: &str) -> String {
+    format!("{INVITE}{app}:{}:{addr}", me.id())
 }
 
-/// Lee una invitación y devuelve (clave, dirección).
-pub fn parse_invite(s: &str) -> Result<(String, String)> {
+/// Lee una invitación de esta app y devuelve (clave, dirección, app).
+pub fn parse_invite(s: &str, app: &str) -> Result<(String, String, String)> {
+    let (key, addr, inv_app) = parse_invite_any(s)?;
+    // El App ID entra en la derivación del buzón y del saludo: una invitación de otra app no sirve.
+    if inv_app != app {
+        return Err("la invitación es de otra aplicación".into());
+    }
+    Ok((key, addr, inv_app))
+}
+
+/// Lee una invitación sin comprobar la app (para mostrarla antes de saber a cuál pertenece).
+pub fn parse_invite_any(s: &str) -> Result<(String, String, String)> {
     let s = s.trim();
-    if s.starts_with("mobilemesh:1:") {
-        return Err("esa invitación es de una versión anterior; pide una nueva".into());
+    if s.starts_with("mobilemesh:1:") || s.starts_with("mobilemesh:2:") {
+        return Err("invitación de una versión anterior".into());
     }
     let rest = s.strip_prefix(INVITE).ok_or("no es una invitación de MobileMesh")?;
+    let (app, rest) = rest.split_once(':').ok_or("invitación incompleta")?;
     let (key, addr) = rest.split_once(':').ok_or("invitación incompleta")?;
     from_hex(key)?;
     transport::check_route(addr)?;
-    Ok((key.to_string(), addr.to_string()))
+    Ok((key.to_string(), addr.to_string(), app.to_string()))
 }
 
 const LINK_REQUEST: &str = "mobilemesh-vincular:1:";
@@ -692,7 +712,30 @@ pub enum Sent {
 
 /// Entrega en directo; si el destino no contesta (dormido, sin red) y tiene buzón en un relé, deja
 /// allí los mensajes de texto como cartas cifradas. Lo demás sigue pendiente.
+///
+/// Por aquí pasa todo lo que se envía, así que es el único sitio donde hace falta medir el envío:
+/// cuánto tardó y si acabó en directo, en buzón o en nada (ver [`metricas`]).
 pub fn send_or_deposit(store: &Store, me: &Identity, peer: &str, route: &str) -> Result<Sent> {
+    let reloj = tiempo::Instant::now();
+    let r = entregar_o_depositar(store, me, peer, route);
+    let (resultado, n) = match &r {
+        Ok(Sent::Delivered(n)) => ("directo", Some(*n)),
+        Ok(Sent::Deposited(n)) => ("buzon", Some(*n)),
+        Err(_) => ("fallo", None),
+    };
+    metricas::registrar(metricas::Fila {
+        evento: "envio",
+        resultado,
+        objetivo: metricas::corto(peer),
+        latencia_ms: Some(reloj.elapsed().as_millis() as u64),
+        n,
+        ..Default::default()
+    });
+    r
+}
+
+/// Lo que hace de verdad [`send_or_deposit`]; aparte para medirlo sin tocar sus caminos de salida.
+fn entregar_o_depositar(store: &Store, me: &Identity, peer: &str, route: &str) -> Result<Sent> {
     match deliver(store, me, peer, route) {
         Ok(n) => Ok(Sent::Delivered(n)),
         Err(e) => match deposit_pending(store, me, peer, route)? {
@@ -758,7 +801,9 @@ pub fn collect_letters(store: &Store, me: &Identity) -> Result<usize> {
     if relays.is_empty() {
         return Ok(0);
     }
+    let reloj = tiempo::Instant::now();
     let secret = store.mailbox_secret()?;
+    let app = crate::nombres::app_de(store)?;
     store.requeue_stale_letters(6)?;
     let mut new = 0;
     let mut acks: Vec<Ack> = Vec::new();
@@ -766,7 +811,7 @@ pub fn collect_letters(store: &Store, me: &Identity) -> Result<usize> {
     let mut ok = false;
     let mut last = Ok(0);
     for relay in &relays {
-        last = relay::collect(relay, &secret, |raw| {
+        last = relay::collect(relay, &secret, &app, |raw| {
             if let Ok(Some(ack)) = read_letter(store, me, raw, &mut new) {
                 acks.push(ack);
             }
@@ -785,6 +830,13 @@ pub fn collect_letters(store: &Store, me: &Identity) -> Result<usize> {
             let _ = relay::deposit(&relay, &mailbox, &letter(store, "ack", me, &id, kind, ct)?);
         }
     }
+    metricas::registrar(metricas::Fila {
+        evento: "recogida",
+        resultado: if new > 0 { "cartas" } else { "vacio" },
+        latencia_ms: Some(reloj.elapsed().as_millis() as u64),
+        n: Some(new),
+        ..Default::default()
+    });
     Ok(new)
 }
 

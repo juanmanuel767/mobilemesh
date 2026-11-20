@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="es-CO"><head><meta charset="utf-8"><title>Prueba: guardar una hoja de cálculo</title>
+<style>
+ body{font:14px/1.6 ui-monospace,monospace;background:#10171e;color:#e7ece8;padding:24px;max-width:950px}
+ h1{font-size:19px} li{margin:5px 0} .ok{color:#7cc79a} .mal{color:#f08d7a} .dato{color:#74aae6}
+ .grande{font-size:17px;margin-top:16px;padding:12px;border-radius:6px}
+</style></head><body>
+<h1>MobileMesh guardando una hoja de cálculo de verdad</h1>
+<p style="color:#9aa8b2">Todo local: sin servidor, sin relé. Recarga (F5) para comprobar que lo guardado sigue ahí.</p>
+<ul id="s"></ul><div id="v"></div>
+<script type="module">
+const s = document.getElementById('s');
+const di = (t, c) => { const li = document.createElement('li'); li.textContent = t; if (c) li.className = c; s.appendChild(li); };
+const veredicto = (t, bien) => { const d = document.getElementById('v'); d.className='grande';
+  d.style.background = bien ? '#12281c' : '#2e1713'; d.style.color = bien ? '#7cc79a' : '#f08d7a'; d.textContent = t; };
+
+function libro(filas) {
+  const cells = {};
+  cells.A1 = { value: 'Mes' }; cells.B1 = { value: 'Ingresos' }; cells.E1 = { value: 'Utilidad' };
+  for (let f = 2; f <= filas + 1; f++) {
+    cells[`A${f}`] = { value: `Mes ${f - 1}` };
+    cells[`B${f}`] = { value: 12500000 + f, format: { kind: 'currency', code: 'COP' } };
+    cells[`C${f}`] = { value: 5000000 + f, format: { kind: 'currency', code: 'COP' } };
+    cells[`D${f}`] = { value: 6200000, format: { kind: 'currency', code: 'COP' } };
+    cells[`E${f}`] = { formula: `=B${f}-C${f}-D${f}`, intent: 'Utilidad del mes · café y ñandú €' };
+  }
+  return { id: `libro-${filas}`, name: `Flujo de caja (${filas} meses)`, currency: 'COP',
+    activeSheetId: 's1', namedRanges: [], charts: [],
+    sheets: [{ id: 's1', name: 'Flujo', cells, rowCount: filas + 10, colCount: 12 }] };
+}
+
+try {
+  const { MobileMesh } = await import('./mobilemesh.js');
+  let t = Date.now();
+  const mesh = await MobileMesh.start();
+  di(`MobileMesh arrancó en ${Date.now() - t} ms`, 'ok');
+
+  // ¿Sobrevivió lo de la vez anterior?
+  let previos = 0;
+  for (const filas of [12, 1000]) {
+    const json = await mesh.readLarge('cifra_documentos', `libro-${filas}`, 'documento');
+    if (json) {
+      const doc = JSON.parse(json);
+      di(`sobrevivió a la recarga: "${doc.name}" — ${Object.keys(doc.sheets[0].cells).length} celdas`, 'ok');
+      previos++;
+    }
+  }
+  if (previos === 0) di('(primera vez: todavía no había nada guardado)', 'dato');
+
+  for (const filas of [12, 1000]) {
+    const doc = libro(filas);
+    const json = JSON.stringify(doc);
+    const celdas = Object.keys(doc.sheets[0].cells).length;
+
+    t = Date.now();
+    await mesh.saveLarge('cifra_documentos', doc.id, 'documento', json);
+    const msGuardar = Date.now() - t;
+
+    t = Date.now();
+    const vuelta = await mesh.readLarge('cifra_documentos', doc.id, 'documento');
+    const msLeer = Date.now() - t;
+
+    const igual = vuelta === json;
+    di(`${celdas} celdas · ${(json.length / 1024).toFixed(0)} KB · guardar ${msGuardar} ms · leer ${msLeer} ms · ¿idéntico? ${igual ? 'SÍ' : 'NO'}`,
+       igual ? 'ok' : 'mal');
+    if (igual) di(`   fórmula de E5 intacta: ${JSON.parse(vuelta).sheets[0].cells.E5.formula}`, 'dato');
+    if (!igual) throw new Error(`el libro de ${filas} meses no volvió igual`);
+  }
+
+  veredicto(previos > 0
+    ? '✓ FUNCIONA Y PERSISTE: lo guardado seguía ahí después de recargar, incluido el libro grande.'
+    : '✓ FUNCIONA. Pulsa F5: si al recargar aparecen arriba los dos libros, la persistencia queda probada.', true);
+} catch (e) {
+  di(`ERROR: ${e?.message ?? e}`, 'mal');
+  veredicto(`✗ FALLÓ: ${e?.message ?? e}`, false);
+}
+</script></body></html>

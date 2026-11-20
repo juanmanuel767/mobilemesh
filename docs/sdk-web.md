@@ -95,7 +95,7 @@ En Apache: `Header always set Cross-Origin-Opener-Policy "same-origin"` y
 ```js
 import { MobileMesh } from "mobilemesh";   // sin npm: "./mobilemesh.js"
 
-const mesh = await MobileMesh.start();
+const mesh = await MobileMesh.start({ appId: "mi-web" });   // marca de tu web
 console.log("mi cuenta:", await mesh.account());
 
 // Datos (cifrados y permanentes en este navegador)
@@ -112,6 +112,13 @@ mesh.onReceive(async (n) => console.log(await mesh.messages()));
 await mesh.shareWith("tareas", "ana", "write"); // "read" | "write" | "none"
 await mesh.syncWith("ana");
 ```
+
+La marca (`appId`) es el «lote» de tu aplicación: solo las páginas con la misma marca se comunican
+entre sí. Si no la indicas, se usa el dominio de la página (`location.hostname`), que ya es igual
+para todos tus usuarios. No la cambies una vez publicada: la base del navegador se guarda por marca.
+
+Si vienes de v0.2.1, el protocolo cambió (buzón del relé, saludo e invitaciones) y las versiones
+antiguas no se comunican con las nuevas. Los datos guardados se conservan.
 
 La API está en inglés. Los nombres en español (`iniciar`, `guardar`, `datos`, `enviar`…) siguen funcionando, pero avisan una vez por consola de que están obsoletos. Los permisos también aceptan `"leer"`, `"escribir"` y `"nada"`.
 

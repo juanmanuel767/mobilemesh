@@ -99,7 +99,7 @@ class MainActivity : Activity() {
             IdentityState.READY -> {}
         }
         try {
-            if (mesh == null) mesh = Mesh.open(dir, guard)
+            if (mesh == null) mesh = Mesh.open(dir, org.mobilemesh.sdk.MeshHolder.appId(this), guard)
         } catch (e: Exception) {
             if (e.text().startsWith("BLOQUEADO")) return lockedScreen()
             return restoreScreen("No se pudo abrir tu identidad: ${e.text()}")
@@ -129,7 +129,7 @@ class MainActivity : Activity() {
             text("Tus datos se guardan en este teléfono. No hay contraseña en ningún servidor: tu identidad es una clave que solo vive aquí."),
             button("Crear cuenta nueva") {
                 work("Creando tu identidad…") {
-                    mesh = Mesh.create(dir, guard)
+                    mesh = Mesh.create(dir, org.mobilemesh.sdk.MeshHolder.appId(this@MainActivity), guard)
                     ui.post { mainScreen() }
                     null
                 }
@@ -150,7 +150,7 @@ class MainActivity : Activity() {
         }
         val answer = field("…o pega aquí el certificado")
         fun complete(text: String) = work("Comprobando el certificado…") {
-            mesh = Mesh.completeLink(dir, guard, text)
+            mesh = Mesh.completeLink(dir, org.mobilemesh.sdk.MeshHolder.appId(this), guard, text)
             ui.post { mainScreen() }
             null
         }
@@ -224,7 +224,7 @@ class MainActivity : Activity() {
             button("Recuperar") {
                 val (c, p) = code.text.toString() to pass.text.toString()
                 work("Recuperando… (tarda unos segundos)") {
-                    mesh = Mesh.restore(dir, guard, c, p)
+                    mesh = Mesh.restore(dir, org.mobilemesh.sdk.MeshHolder.appId(this), guard, c, p)
                     prefs.edit().putBoolean("backup", true).apply() // quien restaura ya tiene su copia
                     ui.post { mainScreen() }
                     null

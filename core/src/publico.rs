@@ -135,8 +135,8 @@ pub fn on_query(
 // ---------- Lado de la app ----------
 
 fn hablar(store: &Store, me: &Identity, servidor: &str, pedido: Frame) -> Result<Option<Frame>> {
-    let (key, route) = crate::parse_invite(servidor)?;
-    let mut s = crate::connect(store, me, &route, &crate::identity::from_hex(&key)?)?;
+    let (key, route, _) = crate::parse_invite_any(servidor)?;
+    let mut s = crate::connect_infra(store, me, &route, &crate::identity::from_hex(&key)?)?;
     s.send(&pedido)?;
     match s.recv()? {
         Some(Frame::Bad { reason, .. }) => Err(reason.into()),

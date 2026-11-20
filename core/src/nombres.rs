@@ -51,7 +51,22 @@ pub fn normalize(nombre: &str) -> Result<String> {
     if ok { Ok(n) } else { Err("el nombre debe tener de 3 a 30 letras sin tildes, números, «.», «_» o «-»".into()) }
 }
 
-/// Identificador de app normalizado (el paquete de Android, p. ej. `com.empresa.app`); vacío = espacio común.
+/// App ID de las piezas compartidas entre todas las aplicaciones (guía de nombres, colecciones
+/// públicas universales y guardianes). No es una app de usuario: es el carril común por el que
+/// cualquier app llega a esa infraestructura. Lo que guardan ya va separado por app.
+pub const APP_INFRA: &str = "mobilemesh-infra";
+
+/// Identificador nuevo para una aplicación: se genera UNA sola vez, al integrar MobileMesh, y
+/// viaja dentro de la app publicada. Es la «cédula» de esa app: entra en la derivación del buzón
+/// y del saludo, así que dos apps con identificadores distintos no se ven ni se mezclan. No es
+/// un secreto (va dentro del paquete publicado), pero al ser aleatorio nadie lo adivina.
+pub fn nueva_app() -> Result<String> {
+    let mut b = [0u8; 16];
+    getrandom::fill(&mut b).map_err(|e| e.to_string())?;
+    Ok(format!("mm-{}", crate::identity::to_hex(&b)))
+}
+
+/// Identificador de app normalizado (el paquete de Android, p. ej. `com.empresa.app`).
 pub fn normalize_app(app: &str) -> Result<String> {
     let a = app.trim().to_lowercase();
     let ok = a.len() <= 100 && a.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "._-".contains(c));
@@ -69,8 +84,11 @@ fn sin_app(id: &str) -> String {
 }
 
 /// La app de esta cuenta (la pone el SDK al abrirla).
-pub(crate) fn app_de(store: &Store) -> Result<String> {
-    Ok(store.setting("app")?.unwrap_or_default())
+pub fn app_de(store: &Store) -> Result<String> {
+    match store.setting("app")? {
+        Some(app) if !app.trim().is_empty() => Ok(app),
+        _ => Err("falta el identificador de aplicación (appId)".into()),
+    }
 }
 
 fn bad(s: &mut Session, reason: &str) -> Result<()> {
@@ -91,8 +109,8 @@ pub fn on_put(s: &mut Session, store: &Store, peer: &str, app: &str, nombre: &st
     }
     let (Ok(app), Ok(nombre)) = (normalize_app(app), normalize(nombre)) else { return bad(s, "nombre no válido") };
     let nombre = id(&app, &nombre);
-    match crate::parse_invite(invitacion) {
-        Ok((key, _)) if key == peer && invitacion.len() <= 600 => {}
+    match crate::parse_invite(invitacion, &app) {
+        Ok((key, _, _)) if key == peer && invitacion.len() <= 600 => {}
         _ => return bad(s, "la invitación no es de tu cuenta"),
     }
     let clave = format!("nombre:{nombre}");
@@ -167,8 +185,8 @@ pub fn on_requests(s: &mut Session, store: &Store, peer: &str) -> Result<()> {
 // ---------- Lado del usuario ----------
 
 fn hablar(store: &Store, me: &Identity, guia: &str, pedido: Frame) -> Result<Option<Frame>> {
-    let (key, route) = crate::parse_invite(guia)?;
-    let mut s = crate::connect(store, me, &route, &crate::identity::from_hex(&key)?)?;
+    let (key, route, _) = crate::parse_invite_any(guia)?;
+    let mut s = crate::connect_infra(store, me, &route, &crate::identity::from_hex(&key)?)?;
     s.send(&pedido)?;
     match s.recv()? {
         Some(Frame::Bad { reason, .. }) => Err(reason.into()),

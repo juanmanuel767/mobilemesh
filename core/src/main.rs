@@ -7,6 +7,9 @@ use mobilemesh_core::{
 };
 use std::{env, io::stdin, net::TcpListener, path::Path, process::exit};
 
+/// App por defecto cuando la orden no tiene una base de datos de la que leerla.
+const APP_CLI: &str = "mesh-cli";
+
 const USO: &str = "uso:
   mesh <carpeta> init                               crear identidad y base de datos
   mesh <carpeta> id                                 ver mi clave pública (para compartir)
@@ -97,8 +100,9 @@ fn run() -> Result<()> {
         }
         ["invitacion", addr] => {
             let (me, store) = open()?;
+            let app = mobilemesh_core::nombres::app_de(&store)?;
             let route = store.relay_route()?.map_or(addr.to_string(), |r| format!("{addr}|{r}"));
-            println!("{}", invite(&me, &route));
+            println!("{}", invite(&me, &app, &route));
         }
         // «-» quita el relé y vuelve a recibir solo por la dirección propia, como `usarRele(null)`
         // en el SDK: sin esto no había manera de deshacerlo desde la línea de órdenes.
@@ -113,8 +117,8 @@ fn run() -> Result<()> {
             println!("relé {relay}; mi ruta por él: {}", store.relay_route()?.unwrap_or_default());
         }
         ["contacto", name, key, addr @ ..] if addr.len() <= 1 => {
-            let (key, addr) = match parse_invite(key) {
-                Ok((k, a)) => (k, Some(a)),
+            let (key, addr) = match parse_invite(key, APP_CLI) {
+                Ok((k, a, _)) => (k, Some(a)),
                 Err(_) => (key.to_string(), addr.first().map(|a| a.to_string())),
             };
             open()?.1.add_contact(name, &key, addr.as_deref())?;
@@ -171,11 +175,12 @@ fn run() -> Result<()> {
             let l = TcpListener::bind(addr)?;
             println!("escuchando en {}", l.local_addr()?);
             let secret = store.mailbox_secret()?;
+            let app = mobilemesh_core::nombres::app_de(&store)?;
             for relay in store.relays()? {
-                let (dir, me, secret) = (dir.to_path_buf(), me.clone(), secret.clone());
+                let (dir, me, secret, app) = (dir.to_path_buf(), me.clone(), secret.clone(), app.clone());
                 println!("y en el relé {relay}");
                 std::thread::spawn(move || {
-                    mobilemesh_core::relay::listen(relay, secret, move |stream| {
+                    mobilemesh_core::relay::listen(relay, secret, app, move |stream| {
                         let store = Store::open(&dir, me.db_key()).expect("base de datos");
                         match serve(&store, &me, stream) {
                             Ok(n) => println!("{n} mensaje(s) recibido(s) por el relé"),
@@ -306,10 +311,11 @@ fn run() -> Result<()> {
         ["guardian", addr, public] => {
             let (me, store) = open()?;
             mobilemesh_core::guardian::enable(&store)?;
+            let app = mobilemesh_core::nombres::app_de(&store)?;
             drop(store);
             let l = TcpListener::bind(addr)?;
             println!("guardián escuchando en {}", l.local_addr()?);
-            println!("invitación: {}", invite(&me, public));
+            println!("invitación: {}", invite(&me, &app, public));
             // Cada 6 horas, borrar las copias abandonadas.
             let (d, m) = (dir.to_path_buf(), me.clone());
             std::thread::spawn(move || loop {
@@ -327,10 +333,11 @@ fn run() -> Result<()> {
         ["nombres", addr, public] => {
             let (me, store) = open()?;
             mobilemesh_core::nombres::enable(&store)?;
+            let app = mobilemesh_core::nombres::app_de(&store)?;
             drop(store);
             let l = TcpListener::bind(addr)?;
             println!("guía de nombres escuchando en {}", l.local_addr()?);
-            println!("invitación: {}", invite(&me, public));
+            println!("invitación: {}", invite(&me, &app, public));
             mobilemesh_core::accept_loop(l, dir.to_path_buf(), me, || false, |r| {
                 if let Err(e) = r {
                     eprintln!("conexión rechazada: {e}");
@@ -340,10 +347,11 @@ fn run() -> Result<()> {
         ["publico", addr, public] => {
             let (me, store) = open()?;
             mobilemesh_core::publico::enable(&store)?;
+            let app = mobilemesh_core::nombres::app_de(&store)?;
             drop(store);
             let l = TcpListener::bind(addr)?;
             println!("colecciones públicas escuchando en {}", l.local_addr()?);
-            println!("invitación: {}", invite(&me, public));
+            println!("invitación: {}", invite(&me, &app, public));
             mobilemesh_core::accept_loop(l, dir.to_path_buf(), me, || false, |r| {
                 if let Err(e) = r {
                     eprintln!("conexión rechazada: {e}");
@@ -379,7 +387,8 @@ fn run() -> Result<()> {
         }
         ["registrar-nombre", guia, nombre, ruta] => {
             let (me, store) = open()?;
-            mobilemesh_core::nombres::register(&store, &me, guia, nombre, &invite(&me, ruta))?;
+            let app = mobilemesh_core::nombres::app_de(&store)?;
+            mobilemesh_core::nombres::register(&store, &me, guia, nombre, &invite(&me, &app, ruta))?;
             println!("nombre registrado: {nombre}");
         }
         ["buscar-nombre", guia, nombre] => {
@@ -388,23 +397,25 @@ fn run() -> Result<()> {
         }
         ["pedir-contacto", guia, nombre] => {
             let (me, store) = open()?;
+            let app = mobilemesh_core::nombres::app_de(&store)?;
             let inv = mobilemesh_core::nombres::find(&store, &me, guia, nombre)?.ok_or("ese nombre no existe")?;
-            let (key, ruta) = parse_invite(&inv)?;
+            let (key, ruta, _) = parse_invite(&inv, &app)?;
             store.add_contact(nombre, &key, Some(&ruta))?;
             mobilemesh_core::nombres::request(&store, &me, guia, nombre)?;
             println!("contacto añadido y avisado: {nombre}");
         }
         ["solicitudes", guia] => {
             let (me, store) = open()?;
+            let app = mobilemesh_core::nombres::app_de(&store)?;
             for (nombre, inv) in mobilemesh_core::nombres::requests(&store, &me, guia)? {
-                let (key, ruta) = parse_invite(&inv)?;
+                let (key, ruta, _) = parse_invite(&inv, &app)?;
                 store.add_contact(&nombre, &key, Some(&ruta))?;
                 println!("contacto añadido por solicitud: {nombre}");
             }
         }
         ["guardar-cuenta", inv, user] => {
             let (me, store) = open()?;
-            let (key, route) = parse_invite(inv)?;
+            let (key, route, _) = mobilemesh_core::parse_invite_any(inv)?;
             mobilemesh_core::guardian::save_account(&store, &me, &route, &key, user, &password()?)?;
             println!("código de recuperación guardado en el guardián");
         }
@@ -412,7 +423,7 @@ fn run() -> Result<()> {
             if Identity::load(dir, &Plain).is_ok() {
                 return Err("esta carpeta ya tiene una identidad válida; no se reemplaza".into());
             }
-            let (key, route) = parse_invite(inv)?;
+            let (key, route, _) = mobilemesh_core::parse_invite_any(inv)?;
             let me = mobilemesh_core::guardian::find_account(&dir.with_extension("paso"), &route, &key, user, &password()?)?;
             me.save(dir, &Plain)?;
             Store::open(dir, me.db_key())?;

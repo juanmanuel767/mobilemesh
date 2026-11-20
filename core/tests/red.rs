@@ -1,6 +1,8 @@
 //! Pruebas de la Fase 4/5 con dos o tres "teléfonos" simulados en el mismo equipo.
 
 use mobilemesh_core::{Identity, Store, deliver, identity::Plain, serve};
+const APP: &str = "prueba";
+
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -18,7 +20,11 @@ fn device(name: &str) -> (PathBuf, Identity) {
 
 /// Abre la base de datos de un dispositivo de prueba con la clave de su identidad.
 fn st(dir: &std::path::Path) -> Store {
-    Store::open(dir, Identity::load(dir, &Plain).unwrap().db_key()).unwrap()
+    let store = Store::open(dir, Identity::load(dir, &Plain).unwrap().db_key()).unwrap();
+    if store.setting("app").unwrap().is_none() {
+        store.set_setting("app", Some(APP)).unwrap();
+    }
+    store
 }
 
 /// Abre la base de un dispositivo de prueba sin pasar por `Store`, con su clave
@@ -201,10 +207,10 @@ fn base_antigua_se_migra_y_no_se_cambia_la_clave_en_silencio() {
 #[test]
 fn invitacion_ida_y_vuelta() {
     let (_, me) = device("invita");
-    let inv = mobilemesh_core::invite(&me, "192.168.20.3:7801");
-    assert_eq!(mobilemesh_core::parse_invite(&inv).unwrap(), (me.id(), "192.168.20.3:7801".into()));
-    assert!(mobilemesh_core::parse_invite("hola").is_err());
-    assert!(mobilemesh_core::parse_invite(&inv.replace("7801", "puerto")).is_err());
+    let inv = mobilemesh_core::invite(&me, APP, "192.168.20.3:7801");
+    assert_eq!(mobilemesh_core::parse_invite(&inv, APP).unwrap(), (me.id(), "192.168.20.3:7801".into(), APP.into()));
+    assert!(mobilemesh_core::parse_invite("hola", APP).is_err());
+    assert!(mobilemesh_core::parse_invite(&inv.replace("7801", "puerto"), APP).is_err());
 }
 
 #[test]
@@ -633,10 +639,20 @@ fn alice_with_data(tag: &str) -> ((PathBuf, Identity), (PathBuf, Identity)) {
 
 /// Bob atiende una conexión y Alice hace `op` con él como guardián de su copia.
 fn with_holder<T>(alice: &(PathBuf, Identity), bob: &(PathBuf, Identity), me: &Identity, dir: &std::path::Path, op: impl FnOnce(&Store, &mobilemesh_core::store::Holder) -> T) -> T {
+    with_holder_named("bob", alice, bob, me, dir, op)
+}
+
+/// Igual, pero quien guarda la copia es el guardián compartido (se le habla por el carril común).
+fn with_guardian_holder<T>(alice: &(PathBuf, Identity), bob: &(PathBuf, Identity), me: &Identity, dir: &std::path::Path, op: impl FnOnce(&Store, &mobilemesh_core::store::Holder) -> T) -> T {
+    with_holder_named(mobilemesh_core::replica::GUARDIAN, alice, bob, me, dir, op)
+}
+
+fn with_holder_named<T>(nombre: &str, alice: &(PathBuf, Identity), bob: &(PathBuf, Identity), me: &Identity, dir: &std::path::Path, op: impl FnOnce(&Store, &mobilemesh_core::store::Holder) -> T) -> T {
     let (addr, h) = listen_once(bob.0.clone());
     let store = Store::open(dir, me.db_key()).unwrap();
-    store.add_holder("bob", &bob.1.id(), &addr).unwrap();
-    let holder = store.holders().unwrap().into_iter().find(|x| x.name == "bob").unwrap();
+    store.set_setting("app", Some(APP)).unwrap();
+    store.add_holder(nombre, &bob.1.id(), &addr).unwrap();
+    let holder = store.holders().unwrap().into_iter().find(|x| x.name == nombre).unwrap();
     let r = op(&store, &holder);
     let _ = h.join();
     let _ = alice;
@@ -684,7 +700,9 @@ fn sin_permiso_no_se_guarda_y_un_ajeno_no_descarga() {
     st(&bob.0).set_consent(&alice.1.id(), true).unwrap();
     with_holder(&alice, &bob, &alice.1, &alice.0, |s, h| replica::push(s, &alice.1, h)).unwrap();
     let mallory = device("mallory8");
-    Store::open(&bob.0, bob.1.db_key()).unwrap().add_contact("mallory", &mallory.1.id(), None).unwrap();
+    let store_bob = Store::open(&bob.0, bob.1.db_key()).unwrap();
+    store_bob.set_setting("app", Some(APP)).unwrap();
+    store_bob.add_contact("mallory", &mallory.1.id(), None).unwrap();
     st(&mallory.0).add_contact("bob", &bob.1.id(), None).unwrap();
     let mut thief = mallory.1.clone();
     thief.account_secret = Some([1u8; 32]); // para poder intentar descifrar algo
@@ -764,11 +782,11 @@ fn register(dev: &(PathBuf, Identity), relay: &str, secret: &str) -> String {
     let (dir, me) = (dev.0.clone(), dev.1.clone());
     let (relay, secret2) = (relay.to_string(), secret.to_string());
     thread::spawn(move || {
-        rele::listen(relay, secret2, move |stream| {
-            let _ = serve(&Store::open(&dir, me.db_key()).unwrap(), &me, stream);
+        rele::listen(relay, secret2, APP.to_string(), move |stream| {
+            let _ = serve(&st(&dir), &me, stream);
         })
     });
-    let id = rele::mailbox_id(secret);
+    let id = rele::mailbox_id(secret, APP);
     thread::sleep(std::time::Duration::from_millis(300));
     id
 }
@@ -796,8 +814,8 @@ fn el_rele_une_dispositivos_sin_conexion_directa() {
     assert!(err.contains("no está conectado"), "{err}");
     // El buzón no revela su secreto y la invitación lo acepta como ruta válida.
     assert_ne!(id, "s".repeat(64));
-    let inv = mobilemesh_core::invite(&bob.1, &route);
-    assert_eq!(mobilemesh_core::parse_invite(&inv).unwrap().1, route);
+    let inv = mobilemesh_core::invite(&bob.1, APP, &route);
+    assert_eq!(mobilemesh_core::parse_invite(&inv, APP).unwrap().1, route);
 }
 
 #[test]
@@ -835,6 +853,7 @@ use mobilemesh_core::access;
 
 fn send_one(from: &(PathBuf, Identity), to: &(PathBuf, Identity), me: &Identity, text: &str) -> Result<usize, String> {
     let store = Store::open(&from.0, me.db_key()).unwrap();
+    store.set_setting("app", Some(APP)).unwrap();
     store.queue(&to.1.id(), text).unwrap();
     let (addr, h) = listen_once(to.0.clone());
     let r = deliver(&store, me, &to.1.id(), &addr).map_err(|e| e.to_string());
@@ -1091,8 +1110,8 @@ fn el_rele_avisa_sin_contenido_a_quien_tiene_ficha_de_avisos() {
     let mailbox = st(&bob.0).relay_route().unwrap().unwrap().rsplit_once('/').unwrap().1.to_string();
 
     // Ficha falsa o firma de otro: no se acepta.
-    assert!(mobilemesh_core::relay::set_push_token(&relay, &secret, Some("mala ficha")).is_err());
-    mobilemesh_core::relay::set_push_token(&relay, &secret, Some("ficha-de-bob:123")).unwrap();
+    assert!(mobilemesh_core::relay::set_push_token(&relay, &secret, APP, Some("mala ficha")).is_err());
+    mobilemesh_core::relay::set_push_token(&relay, &secret, APP, Some("ficha-de-bob:123")).unwrap();
 
     // Dos cartas seguidas = un solo aviso, solo con la ficha.
     mobilemesh_core::relay::deposit(&relay, &mailbox, "AAAA").unwrap();
@@ -1101,7 +1120,7 @@ fn el_rele_avisa_sin_contenido_a_quien_tiene_ficha_de_avisos() {
     assert_eq!(std::fs::read_to_string(&log).unwrap(), "ficha-de-bob:123\n");
 
     // Sin ficha, no hay aviso.
-    mobilemesh_core::relay::set_push_token(&relay, &secret, None).unwrap();
+    mobilemesh_core::relay::set_push_token(&relay, &secret, APP, None).unwrap();
     std::fs::remove_file(&log).unwrap();
     thread::sleep(std::time::Duration::from_secs(21));
     mobilemesh_core::relay::deposit(&relay, &mailbox, "CCCC").unwrap();
@@ -1218,6 +1237,7 @@ fn guardian_recupera_cuenta_y_datos_con_usuario_y_contrasena() {
     use mobilemesh_core::guardian;
     let (alice, _bob) = alice_with_data("guardian");
     let g = device("guardian");
+    st(&g.0).set_setting("app", Some(mobilemesh_core::nombres::APP_INFRA)).unwrap();
     guardian::enable(&st(&g.0)).unwrap();
     let pass = "una contraseña muy larga";
 
@@ -1226,7 +1246,7 @@ fn guardian_recupera_cuenta_y_datos_con_usuario_y_contrasena() {
     guardian::save_account(&st(&alice.0), &alice.1, &addr, &g.1.id(), "Alice", pass).unwrap();
     h.join().unwrap().unwrap();
     replica::snapshot(&st(&alice.0), &alice.1).unwrap();
-    with_holder(&alice, &g, &alice.1, &alice.0, |s, h| replica::push(s, &alice.1, h)).unwrap();
+    with_guardian_holder(&alice, &g, &alice.1, &alice.0, |s, h| replica::push(s, &alice.1, h)).unwrap();
     assert!(st(&g.0).held(&alice.1.id()).unwrap().is_some(), "el guardián guarda la copia");
 
     // Contraseña equivocada: no hay nada.
@@ -1250,7 +1270,7 @@ fn guardian_recupera_cuenta_y_datos_con_usuario_y_contrasena() {
     let nuevo = alice.0.with_extension("nuevo-g");
     let _ = std::fs::remove_dir_all(&nuevo);
     me.save(&nuevo, &Plain).unwrap();
-    let got = with_holder(&alice, &g, &me, &nuevo, |s, h| replica::restore(s, &me, h)).unwrap();
+    let got = with_guardian_holder(&alice, &g, &me, &nuevo, |s, h| replica::restore(s, &me, h)).unwrap();
     assert_eq!((got.contacts, got.messages), (1, 1));
     assert_eq!(statuses(&nuevo), ["entregado:mensaje-secreto-para-bob"]);
 
@@ -1308,14 +1328,15 @@ fn el_guardian_borra_las_copias_abandonadas_pero_no_las_de_amigos() {
     use mobilemesh_core::guardian;
     let (alice, bob) = alice_with_data("caduca");
     let g = device("guardian-caduca");
+    st(&g.0).set_setting("app", Some(mobilemesh_core::nombres::APP_INFRA)).unwrap();
     guardian::enable(&st(&g.0)).unwrap();
     // Alice deja su copia en el guardián (sin ser amigos) y Bob en él como amigo.
     replica::snapshot(&st(&alice.0), &alice.1).unwrap();
-    with_holder(&alice, &g, &alice.1, &alice.0, |s, h| replica::push(s, &alice.1, h)).unwrap();
+    with_guardian_holder(&alice, &g, &alice.1, &alice.0, |s, h| replica::push(s, &alice.1, h)).unwrap();
     st(&g.0).add_contact("bob", &bob.1.id(), None).unwrap();
     st(&g.0).set_consent(&bob.1.id(), true).unwrap();
     replica::snapshot(&st(&bob.0), &bob.1).unwrap();
-    with_holder(&bob, &g, &bob.1, &bob.0, |s, h| replica::push(s, &bob.1, h)).unwrap();
+    with_guardian_holder(&bob, &g, &bob.1, &bob.0, |s, h| replica::push(s, &bob.1, h)).unwrap();
 
     // Recién comprobadas: nada que borrar.
     assert_eq!(guardian::purge(&st(&g.0)).unwrap(), 0);
@@ -1330,6 +1351,7 @@ fn el_guardian_borra_las_copias_abandonadas_pero_no_las_de_amigos() {
 fn las_copias_a_medias_cuentan_y_caducan() {
     use mobilemesh_core::guardian;
     let g = device("guardian-parcial");
+    st(&g.0).set_setting("app", Some(mobilemesh_core::nombres::APP_INFRA)).unwrap();
     guardian::enable(&st(&g.0)).unwrap();
     let store = st(&g.0);
     // Un desconocido sube 1000 bytes y nunca termina; un amigo deja otra a medias.
@@ -1413,8 +1435,12 @@ fn un_navegador_habla_con_el_rele_por_websocket() {
 fn un_desconocido_no_puede_llenar_el_guardian_con_mensajes() {
     use mobilemesh_core::guardian;
     let g = device("guardian-intruso");
+    st(&g.0).set_setting("app", Some(mobilemesh_core::nombres::APP_INFRA)).unwrap();
     guardian::enable(&st(&g.0)).unwrap();
     let intruso = device("intruso-guardian");
+    // El intruso se pone en el carril común (si no, el aislamiento por app ya lo pararía antes y
+    // no se comprobaría lo que este test busca: que el guardián rechaza mensajes normales).
+    st(&intruso.0).set_setting("app", Some(mobilemesh_core::nombres::APP_INFRA)).unwrap();
     st(&intruso.0).add_contact("guardian", &g.1.id(), None).unwrap();
     let store = st(&intruso.0);
     store.queue(&g.1.id(), "basura para llenar el disco").unwrap();
@@ -1425,7 +1451,7 @@ fn un_desconocido_no_puede_llenar_el_guardian_con_mensajes() {
     assert!(st(&g.0).list().unwrap().is_empty(), "no guardó nada");
     // Pero sí guarda su copia (lo que un guardián tiene que hacer) y la cuenta como espacio público.
     replica::snapshot(&st(&intruso.0), &intruso.1).unwrap();
-    with_holder(&intruso, &g, &intruso.1, &intruso.0, |s, h| replica::push(s, &intruso.1, h)).unwrap();
+    with_guardian_holder(&intruso, &g, &intruso.1, &intruso.0, |s, h| replica::push(s, &intruso.1, h)).unwrap();
     assert!(st(&g.0).public_held_bytes("nadie").unwrap() > 0);
 }
 
@@ -1445,13 +1471,13 @@ fn ruta_suplantada_no_bloquea_la_siguiente() {
         let a = l.local_addr().unwrap().to_string();
         std::thread::spawn(move || {
             if let Ok((s, _)) = l.accept() {
-                let _ = Session::accept(s, &id);
+                let _ = Session::accept(s, &id, APP);
             }
         });
         a
     };
     let ruta = format!("{}|{}", escuchar(otro), escuchar(bueno.clone()));
-    let s = Session::connect(&ruta, &yo, &from_hex(&bueno.id()).unwrap()).expect("debió ganar la segunda ruta");
+    let s = Session::connect(&ruta, &yo, &from_hex(&bueno.id()).unwrap(), APP).expect("debió ganar la segunda ruta");
     assert_eq!(s.peer, from_hex(&bueno.id()).unwrap());
 }
 
@@ -1459,22 +1485,25 @@ fn ruta_suplantada_no_bloquea_la_siguiente() {
 fn cada_app_tiene_sus_propios_nombres_en_la_guia() {
     use mobilemesh_core::nombres;
     let g = device("guia-apps");
+    // La guía es una pieza compartida: vive en el carril común, no en una app concreta.
+    st(&g.0).set_setting("app", Some(nombres::APP_INFRA)).unwrap();
     nombres::enable(&st(&g.0)).unwrap();
     // Una operación de la guía = una conexión.
     let guia = |op: &dyn Fn(&str) -> Result<(), String>| {
         let (addr, h) = listen_once(g.0.clone());
-        let r = op(&format!("mobilemesh:2:{}:{addr}", g.1.id()));
+        let r = op(&format!("mobilemesh:3:{}:{}:{addr}", nombres::APP_INFRA, g.1.id()));
         let _ = h.join();
         r
     };
     let cuenta = |n: &str, app: &str| {
         let d = device(n);
-        if !app.is_empty() {
-            st(&d.0).set_setting("app", Some(app)).unwrap();
-        }
+        st(&d.0).set_setting("app", Some(if app.is_empty() { APP } else { app })).unwrap();
         d
     };
-    let inv = |d: &(PathBuf, Identity)| format!("mobilemesh:2:{}:127.0.0.1:1", d.1.id());
+    let inv = |d: &(PathBuf, Identity)| {
+        let app = st(&d.0).setting("app").unwrap().unwrap();
+        format!("mobilemesh:3:{app}:{}:127.0.0.1:1", d.1.id())
+    };
     let registrar = |d: &(PathBuf, Identity), n: &str| guia(&|g| nombres::register(&st(&d.0), &d.1, g, n, &inv(d)).map_err(|e| e.to_string()));
     let buscar = |d: &(PathBuf, Identity), n: &str| {
         let out = std::cell::RefCell::new(None);
@@ -1520,14 +1549,14 @@ fn un_supernodo_empalma_llamadas_y_deja_las_cartas_al_rele() {
     // Ana tiene su buzón en el supernodo y contesta con eco.
     let (r, secreto) = (sn.clone(), "buzon-de-ana".to_string());
     thread::spawn(move || {
-        relay::listen(r, secreto, |mut s| {
+        relay::listen(r, secreto, APP.to_string(), |mut s| {
             let mut b = [0u8; 4];
             if s.read_exact(&mut b).is_ok() {
                 let _ = s.write_all(&b);
             }
         })
     });
-    let buzon = relay::mailbox_id("buzon-de-ana");
+    let buzon = relay::mailbox_id("buzon-de-ana", APP);
     let mut s = (0..50)
         .find_map(|_| relay::dial(&sn, &buzon).ok().or_else(|| { thread::sleep(std::time::Duration::from_millis(100)); None }))
         .expect("la llamada por el supernodo");
@@ -1543,7 +1572,7 @@ fn un_supernodo_empalma_llamadas_y_deja_las_cartas_al_rele() {
     // Parado, ya no atiende.
     nodo.parar();
     thread::sleep(std::time::Duration::from_millis(400));
-    assert!(relay::register(&sn, "otro-buzon").is_err());
+    assert!(relay::register(&sn, "otro-buzon", APP).is_err());
 }
 
 #[test]
@@ -1554,7 +1583,7 @@ fn el_supernodo_elegido_va_primero_en_la_invitacion() {
     store.set_setting("supernodo", Some("203.0.113.7:7840")).unwrap();
     let con = store.relay_route().unwrap().unwrap();
     // Primero el supernodo y, detrás, los mismos relés del proyecto de respaldo.
-    let buzon = mobilemesh_core::relay::mailbox_id(&store.mailbox_secret().unwrap());
+    let buzon = mobilemesh_core::relay::mailbox_id(&store.mailbox_secret().unwrap(), APP);
     assert_eq!(con, format!("relay=203.0.113.7:7840/{buzon}|{sin}"));
     // Con su dirección de la wifi: detrás de la pública (para quien esté en su misma casa).
     store.set_setting("supernodo", Some("203.0.113.7:7840>192.168.1.9:7840")).unwrap();
@@ -1576,12 +1605,13 @@ fn un_rele_en_la_wifi_de_otra_casa_se_salta_al_momento() {
 fn colecciones_publicas_ranking_de_todos_y_cada_uno_lo_suyo() {
     use mobilemesh_core::publico;
     let p = device("publico");
+    st(&p.0).set_setting("app", Some(mobilemesh_core::nombres::APP_INFRA)).unwrap();
     publico::enable(&st(&p.0)).unwrap();
     // Una operación = una conexión.
     type Docs = Result<Vec<(String, String, String)>, String>;
     let pieza = |op: &dyn Fn(&str) -> Docs| {
         let (addr, h) = listen_once(p.0.clone());
-        let r = op(&format!("mobilemesh:2:{}:{addr}", p.1.id()));
+        let r = op(&format!("mobilemesh:3:{APP}:{}:{addr}", p.1.id()));
         let _ = h.join();
         r
     };

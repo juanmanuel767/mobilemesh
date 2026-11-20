@@ -162,9 +162,9 @@ typealias Mensaje = Message
  */
 class MobileMesh private constructor(private val context: Context, val core: Mesh) {
 
-    // Cada app tiene su espacio en la guía de nombres: «juan» de esta app no choca con el de otra.
+    // La marca de la app se fija al abrir la cuenta; aquí solo se comprueba que coincide.
     init {
-        wrap { core.setApp(context.packageName) }
+        wrap { core.setApp(MeshHolder.appId(context)) }
     }
 
     @Deprecated("Use core", ReplaceWith("core"))
@@ -243,7 +243,7 @@ class MobileMesh private constructor(private val context: Context, val core: Mes
             MeshHolder.guardarPuerto(app, port)
             val m = MeshHolder.open(app) ?: run {
                 if (state(app) == AccountState.LOCKED) throw MobileMeshError("The phone is locked: unlock it to open the account (El teléfono está bloqueado: desbloquéalo para abrir la cuenta)")
-                wrap { Mesh.create(MeshHolder.dir(app), KeystoreGuard(app)) }.also { MeshHolder.mesh = it }
+                wrap { Mesh.create(MeshHolder.dir(app), MeshHolder.appId(app), KeystoreGuard(app)) }.also { MeshHolder.mesh = it }
             }
             MeshService.start(app)
             CopiaAutomatica.siToca(app)
@@ -261,7 +261,7 @@ class MobileMesh private constructor(private val context: Context, val core: Mes
         fun recover(context: Context, code: String, password: String, port: Int = DEFAULT_PORT): MobileMesh {
             val app = context.applicationContext
             MeshHolder.guardarPuerto(app, port)
-            val m = wrap { Mesh.restore(MeshHolder.dir(app), KeystoreGuard(app), code, password) }
+            val m = wrap { Mesh.restore(MeshHolder.dir(app), MeshHolder.appId(app), KeystoreGuard(app), code, password) }
             MeshHolder.mesh = m
             MeshService.start(app)
             return MobileMesh(app, m)
@@ -282,7 +282,7 @@ class MobileMesh private constructor(private val context: Context, val core: Mes
         fun recoverWithGuardian(context: Context, username: String, password: String, port: Int = DEFAULT_PORT): Pair<MobileMesh, String> {
             val app = context.applicationContext
             MeshHolder.guardarPuerto(app, port)
-            val m = wrap { Mesh.recoverFromGuardian(MeshHolder.dir(app), KeystoreGuard(app), username, password) }
+            val m = wrap { Mesh.recoverFromGuardian(MeshHolder.dir(app), MeshHolder.appId(app), KeystoreGuard(app), username, password) }
             MeshHolder.mesh = m
             MeshService.start(app)
             val resumen = runCatching { m.restoreCopy(m.useGuardian()) }.getOrElse { "Cuenta recuperada; no había copia de datos" }
@@ -303,7 +303,7 @@ class MobileMesh private constructor(private val context: Context, val core: Mes
         fun recoverWithPaper(context: Context, code: String, port: Int = DEFAULT_PORT): Pair<MobileMesh, String> {
             val app = context.applicationContext
             MeshHolder.guardarPuerto(app, port)
-            val m = wrap { Mesh.restorePaper(MeshHolder.dir(app), KeystoreGuard(app), code) }
+            val m = wrap { Mesh.restorePaper(MeshHolder.dir(app), MeshHolder.appId(app), KeystoreGuard(app), code) }
             MeshHolder.mesh = m
             MeshService.start(app)
             val resumen = runCatching { m.restoreCopy(m.useGuardian()) }.getOrElse { "Cuenta recuperada; no había copia de datos" }
@@ -395,8 +395,8 @@ class MobileMesh private constructor(private val context: Context, val core: Mes
      * Añade un contacto con su invitación. Devuelve `true` si era otro dispositivo de tu cuenta.
      */
     fun addContact(name: String, invitation: String): Boolean = wrap {
-        val i = parseInvite(invitation)
-        core.addContact(name, i.key, i.addr)
+        // Valida la marca de la app: una invitación de otro lote se rechaza aquí mismo.
+        core.addContactFromInvitation(name, invitation)
     }
 
     @Deprecated("Use addContact()", ReplaceWith("addContact(nombre, invitacion)"))

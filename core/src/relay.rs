@@ -100,8 +100,16 @@ pub fn read_line_max(s: &mut impl Read, max: usize) -> Result<String> {
 }
 
 /// Clave de firma de un buzón, sacada de su secreto.
-fn mailbox_key(secret: &str) -> SigningKey {
-    SigningKey::from_bytes(&Sha256::new_with_prefix(CONTEXT).chain_update(secret.as_bytes()).finalize().into())
+fn mailbox_key(secret: &str, app: &str) -> SigningKey {
+    // El App ID entra en la derivación: el mismo secreto da buzones distintos en cada app.
+    SigningKey::from_bytes(
+        &Sha256::new_with_prefix(CONTEXT)
+            .chain_update(app.as_bytes())
+            .chain_update(b"\0")
+            .chain_update(secret.as_bytes())
+            .finalize()
+            .into(),
+    )
 }
 
 #[doc(hidden)]
@@ -109,9 +117,9 @@ pub fn id_of(public: &[u8]) -> String {
     to_hex(&Sha256::digest(public)[..16])
 }
 
-/// Identificador público de un buzón a partir de su secreto.
-pub fn mailbox_id(secret: &str) -> String {
-    id_of(&mailbox_key(secret).verifying_key().to_bytes())
+/// Identificador público de un buzón a partir de su secreto y su app.
+pub fn mailbox_id(secret: &str, app: &str) -> String {
+    id_of(&mailbox_key(secret, app).verifying_key().to_bytes())
 }
 
 /// Mi IP pública tal como la ve el relé.
@@ -160,8 +168,8 @@ pub fn deposit(relay: &str, id: &str, letter: &str) -> Result<()> {
 }
 
 /// Guarda en el relé la ficha de avisos (p. ej. de Firebase) del buzón de `secret`, o la quita con `None`.
-pub fn set_push_token(relay: &str, secret: &str, token: Option<&str>) -> Result<()> {
-    let key = mailbox_key(secret);
+pub fn set_push_token(relay: &str, secret: &str, app: &str, token: Option<&str>) -> Result<()> {
+    let key = mailbox_key(secret, app);
     let mut s = crate::net::connect(relay, WAIT)?;
     s.set_read_timeout(Some(WAIT))?;
     writeln!(s, "AVISO {}", to_hex(&key.verifying_key().to_bytes()))?;
@@ -177,8 +185,8 @@ pub fn set_push_token(relay: &str, secret: &str, token: Option<&str>) -> Result<
 
 /// Recoge las cartas del buzón de `secret`. `handle` recibe cada una y devuelve si se puede borrar.
 /// Devuelve cuántas había.
-pub fn collect(relay: &str, secret: &str, mut handle: impl FnMut(&str) -> bool) -> Result<usize> {
-    let key = mailbox_key(secret);
+pub fn collect(relay: &str, secret: &str, app: &str, mut handle: impl FnMut(&str) -> bool) -> Result<usize> {
+    let key = mailbox_key(secret, app);
     let mut s = crate::net::connect(relay, WAIT)?;
     s.set_read_timeout(Some(WAIT))?;
     writeln!(s, "RECOGER {}", to_hex(&key.verifying_key().to_bytes()))?;
@@ -203,8 +211,8 @@ pub fn collect(relay: &str, secret: &str, mut handle: impl FnMut(&str) -> bool) 
 
 /// Registra el buzón de `secret` en el relé. Devuelve la conexión de control, por la que llegan
 /// las líneas «LLAMADA <ficha>».
-pub fn register(relay: &str, secret: &str) -> Result<crate::net::Stream> {
-    let key = mailbox_key(secret);
+pub fn register(relay: &str, secret: &str, app: &str) -> Result<crate::net::Stream> {
+    let key = mailbox_key(secret, app);
     let mut control = crate::net::connect(relay, WAIT)?;
     control.set_read_timeout(Some(WAIT))?;
     writeln!(control, "REGISTRAR {}", to_hex(&key.verifying_key().to_bytes()))?;
@@ -330,7 +338,7 @@ pub fn score(sn: &SupernodeInfo, rtt: Option<u32>) -> f32 {
 /// hace el director para comprobar que está vivo. El mejor de dos intentos; `None` si no contesta.
 pub fn probe_rtt(addr: &str) -> Option<u32> {
     let plazo = Duration::from_secs(1);
-    (0..2)
+    let medido = (0..2)
         .filter_map(|_| {
             let t = Instant::now();
             let mut s = crate::net::connect(addr, plazo).ok()?;
@@ -339,7 +347,17 @@ pub fn probe_rtt(addr: &str) -> Option<u32> {
             read_line(&mut s).ok()?;
             u32::try_from(t.elapsed().as_millis()).ok()
         })
-        .min()
+        .min();
+    // La serie de tiempos a cada candidato es lo que sostiene la comparación del mecanismo
+    // adaptativo con el sorteo anterior; sin ella solo queda la decisión, no el porqué.
+    crate::metricas::registrar(crate::metricas::Fila {
+        evento: "rtt",
+        resultado: if medido.is_some() { "contesta" } else { "callado" },
+        objetivo: addr,
+        rtt_ms: medido,
+        ..Default::default()
+    });
+    medido
 }
 
 /// Dónde empieza el reparto de este buzón: el mismo sorteo que usa [`choose`].
@@ -413,22 +431,22 @@ pub fn cambiar(actual: f32, mejor: f32) -> bool {
 
 /// Mantiene el buzón registrado en el relé y entrega cada llamada a `on_call`.
 /// Si se cae, vuelve a conectar (esperando cada vez más, hasta 1 minuto). Nunca termina.
-pub fn listen(relay: String, secret: String, on_call: impl Fn(crate::net::Stream) + Send + Sync + 'static) {
-    escuchar(relay, secret, || true, None, on_call)
+pub fn listen(relay: String, secret: String, app: String, on_call: impl Fn(crate::net::Stream) + Send + Sync + 'static) {
+    escuchar(relay, secret, app, || true, None, on_call)
 }
 
 /// Como `listen`, pero termina cuando `seguir` deja de cumplirse (se mira al menos cada 2 min).
 /// Para supernodos: cuando se elige otro, el buzón en el viejo se suelta.
-pub fn listen_while(relay: String, secret: String, seguir: impl Fn() -> bool, on_call: impl Fn(crate::net::Stream) + Send + Sync + 'static) {
-    escuchar(relay, secret, seguir, Some(Duration::from_secs(120)), on_call)
+pub fn listen_while(relay: String, secret: String, app: String, seguir: impl Fn() -> bool, on_call: impl Fn(crate::net::Stream) + Send + Sync + 'static) {
+    escuchar(relay, secret, app, seguir, Some(Duration::from_secs(120)), on_call)
 }
 
-fn escuchar(relay: String, secret: String, seguir: impl Fn() -> bool, cada: Option<Duration>, on_call: impl Fn(crate::net::Stream) + Send + Sync + 'static) {
+fn escuchar(relay: String, secret: String, app: String, seguir: impl Fn() -> bool, cada: Option<Duration>, on_call: impl Fn(crate::net::Stream) + Send + Sync + 'static) {
     let on_call = Arc::new(on_call);
     let mut pause = Duration::from_secs(2);
     while seguir() {
         let session = (|| -> Result<()> {
-            let mut control = register(&relay, &secret)?;
+            let mut control = register(&relay, &secret, &app)?;
             pause = Duration::from_secs(2);
             // Un «PING» de vez en cuando mantiene abierta la conexión en routers y redes móviles.
             let mut ping = control.try_clone_conn()?;

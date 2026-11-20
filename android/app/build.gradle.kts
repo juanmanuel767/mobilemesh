@@ -28,3 +28,6 @@ dependencies {
     // Leer y dibujar códigos QR (invitaciones y copia de recuperación). Código abierto, sin servicios de Google.
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }
+
+// Marca de la app para MobileMesh: se genera sola la primera vez (ver tools/mobilemesh.gradle.kts).
+apply(from = "../../tools/mobilemesh.gradle.kts")

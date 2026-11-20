@@ -88,8 +88,23 @@ pub fn snapshot(store: &Store, me: &Identity) -> Result<u64> {
     Ok(version)
 }
 
+/// Nombre con el que se guarda el guardián universal entre los contactos.
+pub const GUARDIAN: &str = "guardián";
+
+/// ¿Quien guarda la copia es un guardián compartido (y no un amigo de mi misma app)?
+fn es_guardian(store: &Store, h: &Holder) -> bool {
+    h.name == GUARDIAN || crate::directorio::guardianes(store).iter().any(|inv| inv.contains(&h.account))
+}
+
 fn connect(store: &Store, me: &Identity, h: &Holder) -> Result<Session> {
-    crate::connect(store, me, h.addr.as_str(), &from_hex(&h.account)?)
+    let cuenta = from_hex(&h.account)?;
+    // Un amigo guarda mi copia dentro de mi app; un guardián es una pieza compartida y se le
+    // habla por el carril común, igual que a la guía de nombres.
+    if es_guardian(store, h) {
+        crate::connect_infra(store, me, h.addr.as_str(), &cuenta)
+    } else {
+        crate::connect(store, me, h.addr.as_str(), &cuenta)
+    }
 }
 
 /// Envía mi copia más reciente a quien la guarda (continúa si se cortó antes).

@@ -12,10 +12,14 @@ use std::{net::TcpListener, path::PathBuf, thread, time::Instant};
 
 const N: usize = 1000;
 
+const APP: &str = "prueba";
+
 fn device(name: &str) -> (PathBuf, Identity) {
     let dir = std::env::temp_dir().join(format!("mm-vel-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let id = Identity::create(&dir, &Plain).unwrap();
+    // Sin App ID la cuenta no habla con nadie: se le pone el de las pruebas.
+    Store::open(&dir, id.db_key()).unwrap().set_setting("app", Some(APP)).unwrap();
     (dir, id)
 }
 

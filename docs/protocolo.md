@@ -1,7 +1,20 @@
-# Protocolo de MobileMesh (versión 2)
+# Protocolo de MobileMesh (versión 3)
 
 Descripción para quien quiera revisar el protocolo o hacer una implementación compatible.
 Código de referencia: `core/src` (Rust).
+
+## 0. Marca de la app (lote)
+
+Cada aplicación tiene una **marca** (App ID). Entra en la derivación del buzón del relé y en el
+prólogo del saludo Noise, así que solo las copias con la misma marca se comunican entre sí: dos
+apps distintas nunca se mezclan, aunque compartan los mismos relés.
+
+La marca no es un secreto: viaja dentro de la app publicada. Las versiones antiguas (v0.2.1) no se
+comunican con las nuevas, aunque los datos ya guardados se conservan.
+
+Las piezas compartidas (guía de nombres, colecciones públicas universales y guardianes) viven en un
+**carril común** con la marca `mobilemesh-infra`: cualquier app habla con ellas usando esa marca, no
+la suya. Lo que guardan va separado por app donde corresponde.
 
 ## 1. Identidades
 
@@ -13,13 +26,16 @@ Código de referencia: `core/src` (Rust).
 - **Vinculación:** el dispositivo nuevo muestra `mobilemesh-vincular:1:<clave dispositivo>`; el
   principal devuelve `mobilemesh-certificado:1:<cuenta>:<firma>`. Un código corto (48 bits de la clave
   del dispositivo) se compara a simple vista en las dos pantallas.
-- **Invitación:** `mobilemesh:2:<cuenta>:<ruta>`. La ruta es `ip:puerto`, `relay=host:puerto/buzón`
-  o varias separadas por `|` (se prueban en orden).
+- **Invitación:** `mobilemesh:3:<marca>:<cuenta>:<ruta>`. La ruta es `ip:puerto`,
+  `relay=host:puerto/buzón` o varias separadas por `|` (se prueban en orden). Las invitaciones
+  `mobilemesh:1:` y `mobilemesh:2:` ya no valen, y una invitación de otra marca se rechaza con «la
+  invitación es de otra aplicación».
 
 ## 2. Conexión
 
 1. TCP directo o empalmado por un relé (sección 7).
-2. **Noise_XX_25519_ChaChaPoly_BLAKE2s**, prólogo `mobilemesh/2`, paquetes con 2 bytes de longitud.
+2. **Noise_XX_25519_ChaChaPoly_BLAKE2s**, prólogo `mobilemesh/3|<marca>`, paquetes con 2 bytes de
+   longitud. Dos marcas distintas producen prólogos distintos y el saludo no llega a completarse.
 3. La **prueba** (cuenta 32 bytes || certificado 64 bytes) viaja cifrada en los mensajes 2 y 3 del
    saludo. El iniciador comprueba la del respondedor **antes** de enviar la suya.
 4. Plazos: 15 s en total para el saludo y 30 s en total por paquete.
@@ -83,8 +99,11 @@ desconocidas y las apunta como contactos. Datos y resultado: como mucho 32 KB.
 Líneas de texto al empezar cada conexión TCP:
 
 - `REGISTRAR <clave pública Ed25519 del buzón>` → `RETO <32 bytes hex>` → `FIRMA <firma de
-  "mobilemesh-buzon-v1" || reto>` → `OK <buzón>`. El buzón son los 16 primeros bytes del SHA-256 de la
-  clave pública. Luego llegan `LLAMADA <ficha>` y el dueño manda `PING` cada 25 s.
+  "mobilemesh-buzon-v1" || reto>` → `OK <buzón>`. La clave del buzón sale de
+  `SHA-256("mobilemesh-buzon-v1" || marca || 0x00 || secreto)`, y el buzón son los 16 primeros bytes
+  del SHA-256 de esa clave pública: el mismo secreto da un buzón distinto en cada marca. El relé y
+  los supernodos solo ven ese identificador opaco; **no conocen la marca**. Luego llegan
+  `LLAMADA <ficha>` y el dueño manda `PING` cada 25 s.
 - `MARCAR <buzón>` → `OK` (conexión empalmada) o `NO`.
 - `ACEPTAR <ficha>` → la conexión queda empalmada con quien marcó.
 - **Buzón de cartas** (para quien está dormido): `DEPOSITAR <buzón> <carta base64>` → `OK` o `NO`.

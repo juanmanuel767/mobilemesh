@@ -903,7 +903,7 @@ impl Store {
         if relays.is_empty() {
             return Ok(None);
         }
-        let id = crate::relay::mailbox_id(&self.mailbox_secret()?);
+        let id = crate::relay::mailbox_id(&self.mailbox_secret()?, &crate::nombres::app_de(self)?);
         Ok(Some(relays.iter().map(|r| format!("relay={r}/{id}")).collect::<Vec<_>>().join("|")))
     }
 

@@ -11,7 +11,7 @@ use std::{
 };
 
 /// Versión del protocolo. Va dentro del saludo: dos versiones distintas no llegan a conectar.
-const PROLOGUE: &[u8] = b"mobilemesh/2";
+const PROLOGUE: &[u8] = b"mobilemesh/3";
 const MAX: usize = 65535; // límite de un paquete Noise
 const TIMEOUT: Duration = Duration::from_secs(10);
 /// Si hay otra ruta (relé) detrás, la directa no espera tanto.
@@ -196,8 +196,19 @@ pub struct Session {
 const HANDSHAKE: Duration = Duration::from_secs(15);
 const FRAME: Duration = Duration::from_secs(30);
 
-fn builder(me: &Identity) -> Result<snow::Builder<'_>> {
-    Ok(snow::Builder::new(NOISE.parse()?).local_private_key(&me.private)?.prologue(PROLOGUE)?)
+/// Prólogo del saludo Noise: el App ID entra en la derivación, así dos apps no se hablan.
+fn prologo(app: &str) -> Vec<u8> {
+    [PROLOGUE, b"|", app.as_bytes()].concat()
+}
+
+fn iniciador(me: &Identity, app: &str) -> Result<snow::HandshakeState> {
+    let p = prologo(app);
+    Ok(snow::Builder::new(NOISE.parse()?).local_private_key(&me.private)?.prologue(&p)?.build_initiator()?)
+}
+
+fn respondedor(me: &Identity, app: &str) -> Result<snow::HandshakeState> {
+    let p = prologo(app);
+    Ok(snow::Builder::new(NOISE.parse()?).local_private_key(&me.private)?.prologue(&p)?.build_responder()?)
 }
 
 /// Tamaño + paquete en UNA sola escritura: en dos, TCP retenía el segundo trozo esperando la
@@ -264,20 +275,20 @@ impl Session {
     /// arranca `VENTAJA` después; gana la primera que completa el saludo. Si la directa la contesta
     /// otro dispositivo (otra red con la misma IP privada), el relé sigue en carrera.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn connect(route: &str, me: &Identity, expect: &[u8]) -> Result<Session> {
+    pub fn connect(route: &str, me: &Identity, expect: &[u8], app: &str) -> Result<Session> {
         use std::sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc};
         let parts: Vec<String> = route.split('|').map(str::trim).filter(|p| !p.is_empty()).map(String::from).collect();
         if parts.len() <= 1 {
-            return Self::connect_one(route, me, expect);
+            return Self::connect_one(route, me, expect, app);
         }
         let (tx, rx) = mpsc::channel();
         let ganada = Arc::new(AtomicBool::new(false));
         let total = parts.len();
         for (i, part) in parts.into_iter().enumerate() {
-            let (tx, me, expect, ganada) = (tx.clone(), me.clone(), expect.to_vec(), ganada.clone());
+            let (tx, me, expect, app, ganada) = (tx.clone(), me.clone(), expect.to_vec(), app.to_string(), ganada.clone());
             std::thread::spawn(move || {
                 std::thread::sleep(VENTAJA * i as u32);
-                let r = if ganada.load(Ordering::SeqCst) { Err("otra ruta ya conectó".into()) } else { Self::connect_one(&part, &me, &expect) };
+                let r = if ganada.load(Ordering::SeqCst) { Err("otra ruta ya conectó".into()) } else { Self::connect_one(&part, &me, &expect, &app) };
                 if r.is_ok() {
                     ganada.store(true, Ordering::SeqCst);
                 }
@@ -297,10 +308,10 @@ impl Session {
 
     /// En el navegador no hay hilos: rutas en orden.
     #[cfg(target_arch = "wasm32")]
-    pub fn connect(route: &str, me: &Identity, expect: &[u8]) -> Result<Session> {
+    pub fn connect(route: &str, me: &Identity, expect: &[u8], app: &str) -> Result<Session> {
         let mut ultimo = None;
         for part in route.split('|').map(str::trim).filter(|p| !p.is_empty()) {
-            match Self::connect_one(part, me, expect) {
+            match Self::connect_one(part, me, expect, app) {
                 Ok(s) => return Ok(s),
                 Err(e) => ultimo = Some(e),
             }
@@ -309,10 +320,10 @@ impl Session {
     }
 
     /// Conecta por una sola ruta y hace el saludo.
-    fn connect_one(route: &str, me: &Identity, expect: &[u8]) -> Result<Session> {
+    fn connect_one(route: &str, me: &Identity, expect: &[u8], app: &str) -> Result<Session> {
         let mut stream = open(route)?;
         let deadline = Instant::now() + HANDSHAKE;
-        let mut hs = builder(me)?.build_initiator()?;
+        let mut hs = iniciador(me, app)?;
         let mut buf = vec![0; MAX];
         let n = hs.write_message(&[], &mut buf)?;
         write_raw(&mut stream, &buf[..n])?;
@@ -329,10 +340,10 @@ impl Session {
     }
 
     /// Acepta una conexión entrante. `peer` es la cuenta del otro lado; quien llama decide si es de confianza.
-    pub fn accept(stream: impl Conn + 'static, me: &Identity) -> Result<Session> {
+    pub fn accept(stream: impl Conn + 'static, me: &Identity, app: &str) -> Result<Session> {
         let mut stream: Stream = Box::new(stream);
         let deadline = Instant::now() + HANDSHAKE;
-        let mut hs = builder(me)?.build_responder()?;
+        let mut hs = respondedor(me, app)?;
         let mut buf = vec![0; MAX];
         hs.read_message(&read_hs(&mut stream, deadline)?, &mut buf)?;
         let n = hs.write_message(&me.proof(), &mut buf)?;

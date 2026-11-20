@@ -51,6 +51,8 @@ Elige el modo **antes** de `start`: `MobileMesh.backgroundMode(context, Backgrou
 - La clase de colecciones es `MeshCollection` (no `Collection`, que sombrearía la de Kotlin).
 - Para recibir al 100 % con la app cerrada hace falta llamar a `Permissions.request(this)` (en `onResume`).
 - Los nombres en español (`guardar`, `coleccion`, `iniciar`…) son alias `@Deprecated` en Android: usa los ingleses.
+- La marca de la app es obligatoria y se genera sola: añade `apply(from = "../../tools/mobilemesh.gradle.kts")` al `build.gradle.kts` (ajusta la ruta). Crea `src/main/assets/mobilemesh.properties` (`appId=mm-<32 hex>`): guárdalo y no lo borres. Si falta, se usa el nombre del paquete.
+- Las invitaciones v2 (`mobilemesh:2:…`) ya no valen: el protocolo v3 lleva la marca. Una invitación de otra app falla con «la invitación es de otra aplicación», y abrir una base con otra marca, con «esta base de datos pertenece a otra aplicación».
 
 ## Dónde mirar
 - `docs/referencia-api.md`: lista completa de funciones (generada del código).

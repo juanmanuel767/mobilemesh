@@ -131,11 +131,12 @@ fn call(name: &str, a: &Value) -> mobilemesh_core::Result<String> {
             let (me, store) = open(arg(a, "carpeta")?)?;
             let dir = arg(a, "direccion")?;
             let route = store.relay_route()?.map_or(dir.to_string(), |r| format!("{dir}|{r}"));
-            mobilemesh_core::invite(&me, &route)
+            // La invitación lleva la app de esta base: otra aplicación la rechazará.
+            mobilemesh_core::invite(&me, &mobilemesh_core::nombres::app_de(&store)?, &route)
         }
         "anadir_contacto" => {
             let (_, store) = open(arg(a, "carpeta")?)?;
-            let (key, addr) = parse_invite(arg(a, "invitacion")?)?;
+            let (key, addr, _) = parse_invite(arg(a, "invitacion")?, &mobilemesh_core::nombres::app_de(&store)?)?;
             store.add_contact(arg(a, "nombre")?, &key, Some(&addr))?;
             format!("contacto «{}» añadido", arg(a, "nombre")?)
         }
@@ -162,7 +163,7 @@ fn call(name: &str, a: &Value) -> mobilemesh_core::Result<String> {
                 lines.push(format!("relé {r}: {}", if relay::public_ip(r).is_ok() { "responde" } else { "NO responde" }));
             }
             for g in &guardianes {
-                let ok = parse_invite(g).ok().and_then(|(_, route)| route.to_socket_addrs().ok()?.next())
+                let ok = mobilemesh_core::parse_invite_any(g).ok().and_then(|(_, route, _)| route.to_socket_addrs().ok()?.next())
                     .is_some_and(|addr| TcpStream::connect_timeout(&addr, Duration::from_secs(5)).is_ok());
                 lines.push(format!("guardián {}: {}", g.rsplit(':').take(2).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(":"), if ok { "responde" } else { "NO responde" }));
             }

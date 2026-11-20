@@ -28,3 +28,9 @@ include(":mobilemesh-avisos-fcm")
 include(":rele-movil")
 include(":ejemplo-notas")
 project(":ejemplo-notas").projectDir = file("../examples/notas")
+
+// Dos apps distintas creadas desde cero para probar el aislamiento por lotes.
+include(":lote-a")
+project(":lote-a").projectDir = file("../examples/lote-a")
+include(":lote-b")
+project(":lote-b").projectDir = file("../examples/lote-b")

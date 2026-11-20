@@ -42,7 +42,23 @@ fn elegir_supernodo(infos: &[crate::relay::SupernodeInfo], actual: Option<String
     let (candidato, puntos) = crate::relay::mejor(infos, secret)?;
     let suyos = actual.as_ref().and_then(|a| infos.iter().find(|i| &i.addr == a)).map(|i| crate::relay::score(i, crate::relay::probe_rtt(&crate::relay::supernode_addr(&i.addr))));
     let actual = actual.as_deref().zip(suyos);
-    Some(crate::relay::decidir_supernodo(actual, (&candidato, puntos), aspirante))
+    let elegido = crate::relay::decidir_supernodo(actual, (&candidato, puntos), aspirante);
+    // Cada vuelta deja constancia de con cuál se quedó y de cuál ganaba, que es lo que permite
+    // contar después los cambios de supernodo y ver si la histéresis hace su trabajo.
+    crate::metricas::registrar(crate::metricas::Fila {
+        evento: "supernodo",
+        resultado: match actual {
+            None => "primero",
+            Some((a, _)) if a == elegido => "mantiene",
+            Some(_) => "cambia",
+        },
+        objetivo: &elegido,
+        n: Some(infos.len()),
+        score: Some(if elegido == candidato { puntos } else { actual.map_or(puntos, |(_, p)| p) }),
+        nota: &format!("mejor={candidato} puntos={puntos:.4}"),
+        ..Default::default()
+    });
+    Some(elegido)
 }
 
 #[derive(Debug, uniffi::Error)]
@@ -258,9 +274,17 @@ pub fn link_fingerprint(request: String) -> R<String> {
     Ok(crate::fingerprint(&crate::parse_link_request(&request)?))
 }
 
+/// Identificador nuevo para una aplicación. Se llama UNA vez, al integrar MobileMesh en un
+/// proyecto: el valor se guarda en el código de la app y se pasa a `Mesh::create`/`open`.
+#[uniffi::export]
+pub fn new_app_id() -> R<String> {
+    Ok(crate::nombres::nueva_app()?)
+}
+
 #[uniffi::export]
 pub fn parse_invite(text: String) -> R<Invite> {
-    let (key, addr) = crate::parse_invite(&text)?;
+    // Sin base abierta no se sabe la app: solo se comprueba el formato.
+    let (key, addr, _) = crate::parse_invite_any(&text)?;
     Ok(Invite { key, addr })
 }
 
@@ -322,7 +346,9 @@ fn universal_guardian(store: Option<&Store>) -> R<(String, String)> {
         }
     };
     let inv = list.first().ok_or_else(|| fail("no hay ningún guardián configurado"))?;
-    Ok(crate::parse_invite(inv)?)
+    // Los guardianes son infraestructura compartida: valen para cualquier app.
+    let (key, addr, _) = crate::parse_invite_any(inv)?;
+    Ok((key, addr))
 }
 
 /// Un dispositivo MobileMesh. Cada llamada abre su propia conexión a SQLite, así nada se bloquea entre hilos.
@@ -344,8 +370,20 @@ impl Mesh {
         Ok(store.holders()?.into_iter().find(|h| h.name == name).expect("recién añadido"))
     }
 
-    fn ready(dir: PathBuf, me: Identity) -> R<Arc<Self>> {
-        Store::open(&dir, me.db_key())?;
+    /// Abre la base y fija el identificador de aplicación. El App ID entra luego en la derivación
+    /// del buzón y en el saludo cifrado, así que no puede cambiar una vez elegido: si cambiara,
+    /// la cuenta dejaría de encontrar a sus propios contactos.
+    fn ready(dir: PathBuf, me: Identity, app: &str) -> R<Arc<Self>> {
+        let app = crate::nombres::normalize_app(app)?;
+        if app.is_empty() {
+            return Err(fail("falta el identificador de aplicación (appId)"));
+        }
+        let store = Store::open(&dir, me.db_key())?;
+        match store.setting("app")? {
+            Some(guardada) if guardada != app => return Err(fail("esta base de datos pertenece a otra aplicación")),
+            Some(_) => {}
+            None => store.set_setting("app", Some(app.as_str()))?,
+        }
         Ok(Arc::new(Mesh { dir, me }))
     }
 }
@@ -354,59 +392,59 @@ impl Mesh {
 impl Mesh {
     /// Crea una identidad nueva. Falla si ya hay una.
     #[uniffi::constructor]
-    pub fn create(dir: String, guard: Arc<dyn KeyGuard>) -> R<Arc<Self>> {
+    pub fn create(dir: String, app: String, guard: Arc<dyn KeyGuard>) -> R<Arc<Self>> {
         let dir = PathBuf::from(dir);
         let me = Identity::create(&dir, &Guard(guard))?;
-        Self::ready(dir, me)
+        Self::ready(dir, me, &app)
     }
 
     #[uniffi::constructor]
-    pub fn open(dir: String, guard: Arc<dyn KeyGuard>) -> R<Arc<Self>> {
+    pub fn open(dir: String, app: String, guard: Arc<dyn KeyGuard>) -> R<Arc<Self>> {
         let dir = PathBuf::from(dir);
         let me = Identity::load(&dir, &Guard(guard))?;
-        Self::ready(dir, me)
+        Self::ready(dir, me, &app)
     }
 
     /// Termina la vinculación con el certificado que muestra el dispositivo principal.
     #[uniffi::constructor]
-    pub fn complete_link(dir: String, guard: Arc<dyn KeyGuard>, answer: String) -> R<Arc<Self>> {
+    pub fn complete_link(dir: String, app: String, guard: Arc<dyn KeyGuard>, answer: String) -> R<Arc<Self>> {
         let (dir, guard) = (PathBuf::from(dir), Guard(guard));
         let Stored::Pending(p) = identity::load_any(&dir, &guard)? else {
             return Err(fail("este dispositivo no está esperando una vinculación"));
         };
         let me = crate::complete_link(p, &dir, &guard, &answer)?;
-        Self::ready(dir, me)
+        Self::ready(dir, me, &app)
     }
 
     /// Recupera la cuenta desde la copia. Solo si no hay una identidad válida en este dispositivo.
     #[uniffi::constructor]
-    pub fn restore(dir: String, guard: Arc<dyn KeyGuard>, code: String, pass: String) -> R<Arc<Self>> {
+    pub fn restore(dir: String, app: String, guard: Arc<dyn KeyGuard>, code: String, pass: String) -> R<Arc<Self>> {
         let (dir, guard) = (PathBuf::from(dir), Guard(guard));
         if Identity::load(&dir, &guard).is_ok() {
             return Err(fail("este dispositivo ya tiene una identidad válida; no se reemplaza"));
         }
         let me = recovery::import(&code, &pass)?;
         me.save(&dir, &guard)?;
-        Self::ready(dir, me)
+        Self::ready(dir, me, &app)
     }
 
     /// Recupera la cuenta con el código en papel (sin contraseña). Después, `use_guardian` +
     /// `restore_copy(GUARDIAN)` traen los datos.
     #[uniffi::constructor]
-    pub fn restore_paper(dir: String, guard: Arc<dyn KeyGuard>, code: String) -> R<Arc<Self>> {
+    pub fn restore_paper(dir: String, app: String, guard: Arc<dyn KeyGuard>, code: String) -> R<Arc<Self>> {
         let (dir, guard) = (PathBuf::from(dir), Guard(guard));
         if Identity::load(&dir, &guard).is_ok() {
             return Err(fail("este dispositivo ya tiene una identidad válida; no se reemplaza"));
         }
         let me = recovery::from_paper(&code)?;
         me.save(&dir, &guard)?;
-        Self::ready(dir, me)
+        Self::ready(dir, me, &app)
     }
 
     /// Recupera la cuenta desde un guardián con usuario y contraseña (teléfono perdido). Después,
     /// `use_guardian` + `restore_copy(GUARDIAN)` traen los datos.
     #[uniffi::constructor]
-    pub fn recover_from_guardian(dir: String, guard: Arc<dyn KeyGuard>, user: String, pass: String) -> R<Arc<Self>> {
+    pub fn recover_from_guardian(dir: String, app: String, guard: Arc<dyn KeyGuard>, user: String, pass: String) -> R<Arc<Self>> {
         let (dir, guard) = (PathBuf::from(dir), Guard(guard));
         if Identity::load(&dir, &guard).is_ok() {
             return Err(fail("este dispositivo ya tiene una identidad válida; no se reemplaza"));
@@ -414,7 +452,7 @@ impl Mesh {
         let (key, route) = universal_guardian(None)?;
         let me = crate::guardian::find_account(&dir.with_extension("paso"), &route, &key, &user, &pass)?;
         me.save(&dir, &guard)?;
-        Self::ready(dir, me)
+        Self::ready(dir, me, &app)
     }
 
     pub fn id(&self) -> String {
@@ -445,8 +483,13 @@ impl Mesh {
     /// Espacio de nombres de esta app en la guía (el SDK pone el paquete de la app): así los
     /// nombres de una app no chocan con los de otras que usan la misma guía.
     pub fn set_app(&self, app: String) -> R<()> {
+        // El App ID se fija al abrir la cuenta; aquí solo se comprueba que coincide.
         let app = crate::nombres::normalize_app(&app)?;
-        Ok(Store::open(&self.dir, self.me.db_key())?.set_setting("app", Some(&app).filter(|a| !a.is_empty()).map(|a| a.as_str()))?)
+        match Store::open(&self.dir, self.me.db_key())?.setting("app")? {
+            Some(guardada) if guardada == app => Ok(()),
+            Some(_) => Err(fail("esta base de datos pertenece a otra aplicación")),
+            None => Err(fail("la cuenta se abrió sin identificador de aplicación")),
+        }
     }
 
     // ---------- Colecciones públicas ----------
@@ -454,7 +497,7 @@ impl Mesh {
     /// Elige la pieza pública (su invitación), o vuelve a la universal con `None`.
     pub fn use_public_server(&self, invitation: Option<String>) -> R<()> {
         if let Some(i) = &invitation {
-            crate::parse_invite(i)?;
+            crate::parse_invite_any(i)?;
         }
         Ok(Store::open(&self.dir, self.me.db_key())?.set_setting("publico_elegido", invitation.as_deref())?)
     }
@@ -482,7 +525,7 @@ impl Mesh {
     /// Elige la guía de nombres (su invitación), o vuelve a la universal con `None`.
     pub fn use_name_guide(&self, invitation: Option<String>) -> R<()> {
         if let Some(i) = &invitation {
-            crate::parse_invite(i)?;
+            crate::parse_invite_any(i)?;
         }
         Ok(Store::open(&self.dir, self.me.db_key())?.set_setting("guia_elegida", invitation.as_deref())?)
     }
@@ -505,7 +548,8 @@ impl Mesh {
         let guia = name_guide(&store)?;
         let name = crate::nombres::normalize(&name)?;
         let inv = crate::nombres::find(&store, &self.me, &guia, &name)?.ok_or_else(|| fail(format!("no existe el usuario «{name}»")))?;
-        let (key, route) = crate::parse_invite(&inv)?;
+        // La guía solo devuelve usuarios de esta misma app: la invitación debe serlo.
+        let (key, route, _) = crate::parse_invite(&inv, &crate::nombres::app_de(&store)?)?;
         store.add_contact(&name, &key, Some(&route))?;
         Ok(crate::nombres::request(&store, &self.me, &guia, &name)?)
     }
@@ -515,7 +559,8 @@ impl Mesh {
         let store = Store::open(&self.dir, self.me.db_key())?;
         let mut nuevos = vec![];
         for (name, inv) in crate::nombres::requests(&store, &self.me, &name_guide(&store)?)? {
-            let Ok((key, route)) = crate::parse_invite(&inv) else { continue };
+            let Ok(app) = crate::nombres::app_de(&store) else { continue };
+            let Ok((key, route, _)) = crate::parse_invite(&inv, &app) else { continue };
             // Si el nombre ya es de otro contacto (otra clave), se deja como está.
             if store.contact_key(&name)?.is_none_or(|k| k == key) && store.add_contact(&name, &key, Some(&route)).is_ok() {
                 nuevos.push(name);
@@ -552,9 +597,11 @@ impl Mesh {
     /// Invitación (para el QR) con la que otro dispositivo nos añade: dirección directa y, si hay
     /// relé, también la ruta por el relé (se usa solo si la directa no funciona).
     pub fn invite(&self, addr: String) -> R<String> {
-        let relay = Store::open(&self.dir, self.me.db_key())?.relay_route()?;
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        let relay = store.relay_route()?;
         let route = relay.map_or(addr.clone(), |r| format!("{addr}|{r}"));
-        Ok(crate::invite(&self.me, &route))
+        // La invitación lleva la app: quien la lea desde otra aplicación la rechaza.
+        Ok(crate::invite(&self.me, &crate::nombres::app_de(&store)?, &route))
     }
 
     /// Usa sus propios relés «host:puerto» (varios separados por «|») en vez de los universales, o
@@ -576,7 +623,7 @@ impl Mesh {
     pub fn set_push_token(&self, token: Option<String>) -> R<()> {
         let store = Store::open(&self.dir, self.me.db_key())?;
         let (relay, secret) = store.relay()?.ok_or_else(|| fail("los avisos necesitan un relé: configura uno primero"))?;
-        Ok(crate::relay::set_push_token(&relay, &secret, token.as_deref())?)
+        Ok(crate::relay::set_push_token(&relay, &secret, &crate::nombres::app_de(&store)?, token.as_deref())?)
     }
 
     /// Mi ruta pública directa («ip:puerto») si el router abrió el puerto por UPnP.
@@ -596,6 +643,15 @@ impl Mesh {
         }
         let store = Store::open(&self.dir, self.me.db_key())?;
         Ok(crate::add_contact_or_device(&store, &self.me, name, key.trim(), addr.as_deref().map(str::trim))?)
+    }
+
+    /// Añade un contacto a partir de su invitación. Rechaza las invitaciones de otra aplicación:
+    /// aunque no pudieran comunicarse (el saludo de otra app no cuaja), conviene decirlo al momento.
+    pub fn add_contact_from_invitation(&self, name: String, invitation: String) -> R<bool> {
+        let store = Store::open(&self.dir, self.me.db_key())?;
+        let app = crate::nombres::app_de(&store)?;
+        let (key, addr, _) = crate::parse_invite(invitation.trim(), &app)?;
+        self.add_contact(name, key, Some(addr))
     }
 
     /// Otros dispositivos de mi cuenta con los que sincronizo (nombre y dirección).
@@ -934,6 +990,27 @@ impl Mesh {
     /// teléfono se anuncia con batería 0 y los demás lo eligen el último.
     pub fn set_battery(&self, level: u8, charging: bool) {
         BATERIA.store(u16::from(level.min(100)) | if charging { 1 << 8 } else { 0 }, Ordering::SeqCst);
+        crate::metricas::bateria(level, charging);
+    }
+
+    /// Empieza a anotar las medidas del piloto en `path`, un CSV que se crea si no existe y al que
+    /// se añade si ya estaba. Mientras no se llame no se escribe nada en ninguna parte.
+    ///
+    /// Solo apunta tiempos, resultados y qué supernodo se eligió: ni mensajes, ni claves, ni
+    /// nombres (ver [`crate::metricas`]). El archivo es del teléfono; subirlo es decisión de quien
+    /// hace la prueba.
+    pub fn start_metrics(&self, path: String) -> R<()> {
+        crate::metricas::activar(&path).map_err(|e| fail(format!("no puedo escribir las medidas en «{path}»: {e}")))
+    }
+
+    /// Deja de anotar medidas. El archivo se queda como está.
+    pub fn stop_metrics(&self) {
+        crate::metricas::desactivar();
+    }
+
+    /// Dónde se están anotando las medidas, o `None` si están apagadas.
+    pub fn metrics_path(&self) -> Option<String> {
+        crate::metricas::ruta_actual().map(|p| p.display().to_string())
     }
 
     /// Deja de hacer de relé para otros (las llamadas en curso terminan solas).
@@ -1171,9 +1248,11 @@ impl Mesh {
         let (d, m) = (dir.clone(), me.clone());
         thread::spawn(move || Store::open(&d, m.db_key()).map(|s| crate::directorio::actualizar(&s)));
         let secret = store.mailbox_secret()?;
+        // El buzón se deriva con la app: cada aplicación escucha en uno distinto.
+        let app = crate::nombres::app_de(&store)?;
         for relay in store.relays()? {
-            let (atender, secret) = (llamada_por_rele(dir.clone(), me.clone(), events.clone()), secret.clone());
-            thread::spawn(move || crate::relay::listen(relay, secret, atender));
+            let (atender, secret, app) = (llamada_por_rele(dir.clone(), me.clone(), events.clone()), secret.clone(), app.clone());
+            thread::spawn(move || crate::relay::listen(relay, secret, app, atender));
         }
         // Relés automáticos: además, buzón en un supernodo (móvil de otro usuario), que va primero en
         // mi invitación y descarga al relé del proyecto. Si se va, se elige otro.
@@ -1207,11 +1286,12 @@ impl Mesh {
                     let _ = store.set_setting("supernodo", elegido.as_deref());
                     if let Some(sn) = elegido.filter(|sn| escuchando.as_ref() != Some(sn)) {
                         let (atender, secret, d, m, sn2) = (llamada_por_rele(dir.clone(), me.clone(), events.clone()), secret.clone(), dir.clone(), me.clone(), sn.clone());
+                        let app = app.clone();
                         // Se suelta solo cuando se elija otro supernodo.
                         let sigue = move || Store::open(&d, m.db_key()).ok().and_then(|s| s.setting("supernodo").ok().flatten()).as_deref() == Some(sn2.as_str());
                         // Desde su misma casa solo se le llega por la wifi; desde fuera, por la pública.
                         let por = crate::relay::supernode_addr(&sn);
-                        thread::spawn(move || crate::relay::listen_while(por, secret, sigue, atender));
+                        thread::spawn(move || crate::relay::listen_while(por, secret, app, sigue, atender));
                         escuchando = store.setting("supernodo").ok().flatten();
                     }
                     thread::sleep(Duration::from_secs(10 * 60));

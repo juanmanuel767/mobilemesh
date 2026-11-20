@@ -2,6 +2,8 @@
 
 use mobilemesh_core::{Identity, Store, identity::Plain, serve};
 use mobilemesh_servidor::Relay;
+const APP: &str = "prueba";
+
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -17,6 +19,8 @@ fn device(name: &str) -> (PathBuf, Identity) {
     let dir = std::env::temp_dir().join(format!("mm-at-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let id = Identity::create(&dir, &Plain).unwrap();
+    // Sin App ID la cuenta no atiende a nadie: se le pone el de las pruebas.
+    Store::open(&dir, id.db_key()).unwrap().set_setting("app", Some(APP)).unwrap();
     (dir, id)
 }
 
@@ -29,6 +33,7 @@ fn victim(tag: &str) -> (String, thread::JoinHandle<(bool, Duration)>) {
         let (s, _) = l.accept().unwrap();
         let t = Instant::now();
         let store = Store::open(&dir, me.db_key()).unwrap();
+        store.set_setting("app", Some(APP)).unwrap();
         let ok = serve(&store, &me, s).is_ok();
         (ok, t.elapsed())
     });
@@ -71,7 +76,7 @@ fn conexion_a_medias_no_bloquea_para_siempre() {
 fn saludo_valido_de_un_desconocido_no_obtiene_nada() {
     let (addr, h) = victim("desconocido");
     let (_, stranger) = device("extrano");
-    let r = mobilemesh_core::transport::Session::connect(&addr, &stranger, &[0u8; 32]);
+    let r = mobilemesh_core::transport::Session::connect(&addr, &stranger, &[0u8; 32], APP);
     assert!(r.is_err(), "no sabe la cuenta del otro: ni siquiera completa el saludo");
     let (ok, _) = h.join().expect("no debe haber pánico");
     assert!(!ok);
@@ -112,7 +117,7 @@ fn rele_aguanta_lineas_raras_y_avalanchas() {
 fn invitaciones_y_codigos_raros_no_rompen_nada() {
     for s in ["", "mobilemesh:2:", "mobilemesh:2:zz:1.2.3.4:5", &format!("mobilemesh:2:{}:", "a".repeat(64)),
               &format!("mobilemesh:2:{}:relay=x/y", "a".repeat(64)), "mobilemesh:2:ñññ", &"x".repeat(100_000)] {
-        assert!(mobilemesh_core::parse_invite(s).is_err(), "{:.40}", s);
+        assert!(mobilemesh_core::parse_invite(s, APP).is_err(), "{:.40}", s);
     }
     for c in ["", "MM2-", "MM2-zz", &format!("MM2-{}", "0".repeat(151)), "MM1-00"] {
         assert!(mobilemesh_core::recovery::import(c, "contraseña larga").is_err());

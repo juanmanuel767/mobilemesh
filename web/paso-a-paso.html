@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Paso a paso</title>
+<style>body{font:14px ui-monospace,monospace;background:#10171e;color:#e7ece8;padding:20px}li{margin:4px 0}.mal{color:#f08d7a}.ok{color:#7cc79a}</style>
+</head><body><h1>MobileMesh paso a paso</h1><ul id="s"></ul>
+<script type="module">
+const s = document.getElementById('s');
+const di = (t, c) => { const li = document.createElement('li'); li.textContent = t; if (c) li.className = c; s.appendChild(li); };
+di(`crossOriginIsolated: ${self.crossOriginIsolated}`, self.crossOriginIsolated ? 'ok' : 'mal');
+let segundos = 0;
+const reloj = document.createElement('li');
+s.appendChild(reloj);
+setInterval(() => { reloj.textContent = `— han pasado ${++segundos} s —`; }, 1000);
+const w = new Worker('./paso-a-paso.js', { type: 'module' });
+w.onerror = (e) => di(`ERROR al cargar el trabajador: ${e.message || 'sin mensaje'}`, 'mal');
+w.onmessage = ({ data }) => di(data.paso, /ERROR/.test(data.paso) ? 'mal' : 'ok');
+const canal = new MessageChannel();
+w.postMessage({ t: 'arranca', red: canal.port2 }, [canal.port2]);
+</script></body></html>

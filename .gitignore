@@ -20,3 +20,10 @@ react-native/android/.gradle/
 # Claves de los ayudantes: nunca en git (las leen con MM_CLAVES)
 claves.env
 *.env
+# Apps de ejemplo para probar el aislamiento por lotes
+examples/lote-a/build/
+examples/lote-b/build/
+examples/lote-a/.gradle/
+examples/lote-b/.gradle/
+# Paquete del SDK web que genera web/construir.sh
+mobilemesh-web.tar.gz

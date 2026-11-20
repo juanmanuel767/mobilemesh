@@ -40,13 +40,29 @@ object MeshHolder {
 
     fun dir(c: Context) = c.filesDir.resolve("mesh").path
 
+    /**
+     * La marca de esta app (su «lote»): todas las copias instaladas la comparten, y una app con
+     * otra marca no puede comunicarse con esta. Se genera al integrar MobileMesh y viaja dentro
+     * del paquete, en `assets/mobilemesh.properties`. Si no está, se usa el nombre del paquete,
+     * que también es igual en todas las copias.
+     */
+    fun appId(c: Context): String = marca ?: synchronized(this) {
+        marca ?: runCatching {
+            c.assets.open("mobilemesh.properties").use { entrada ->
+                java.util.Properties().apply { load(entrada) }.getProperty("appId")?.trim()
+            }
+        }.getOrNull().orEmpty().ifEmpty { c.packageName }.also { marca = it }
+    }
+
+    @Volatile private var marca: String? = null
+
     /** Abre la identidad si se puede; `null` si no hay o si el teléfono está bloqueado. */
     @Synchronized
     fun open(c: Context): Mesh? {
         mesh?.let { return it }
         val guard = KeystoreGuard(c.applicationContext)
         if (identityState(dir(c), guard) != IdentityState.READY) return null
-        return runCatching { Mesh.open(dir(c), guard) }.getOrNull()?.also { mesh = it }
+        return runCatching { Mesh.open(dir(c), appId(c), guard) }.getOrNull()?.also { mesh = it }
     }
 }
 

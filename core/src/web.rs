@@ -87,8 +87,31 @@ pub fn connect(addr: &str, wait: Duration) -> crate::Result<Stream> {
 
 // ---------- Lo que ve JavaScript ----------
 
-/// Carpeta (virtual) de MobileMesh dentro del almacén privado del navegador.
+/// Carpeta (virtual) de MobileMesh dentro del almacén privado del navegador. Debajo cuelga una
+/// carpeta por aplicación, para que dos webs del mismo navegador no compartan datos.
 const DIR: &str = "/mobilemesh";
+
+thread_local! {
+    /// Marca («lote») de esta web: la fija `usar_app` al arrancar y entra luego en la derivación
+    /// del buzón y del saludo, igual que en Android.
+    static APP: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// Fija la marca de esta aplicación. Se llama una vez, al arrancar, antes que nada.
+#[wasm_bindgen]
+pub fn usar_app(app_id: &str) -> Result<(), JsError> {
+    let app = crate::nombres::normalize_app(app_id).map_err(js)?;
+    if app.is_empty() {
+        return Err(js("falta el identificador de aplicación (appId)"));
+    }
+    APP.with(|a| *a.borrow_mut() = app);
+    Ok(())
+}
+
+fn app() -> crate::Result<String> {
+    let app = APP.with(|a| a.borrow().clone());
+    if app.is_empty() { Err("falta el identificador de aplicación (appId)".into()) } else { Ok(app) }
+}
 
 fn js(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
@@ -105,12 +128,20 @@ pub async fn preparar() -> Result<(), JsError> {
 // ponytail: en el navegador la identidad se guarda sin envolver (el almacén ya es privado de la
 // web); envolverla con una clave no exportable de WebCrypto más adelante.
 fn abrir() -> crate::Result<(crate::Identity, crate::Store)> {
-    let dir = std::path::Path::new(DIR);
+    let app = app()?;
+    let carpeta = format!("{DIR}/{app}");
+    let dir = std::path::Path::new(&carpeta);
     let me = match crate::Identity::load(dir, &crate::identity::Plain) {
         Ok(me) => me,
         Err(_) => crate::Identity::create(dir, &crate::identity::Plain)?,
     };
     let store = crate::Store::open(dir, me.db_key())?;
+    // La marca queda fijada en la cuenta: otra app no puede abrir esta base.
+    match store.setting("app")? {
+        Some(guardada) if guardada != app => return Err("esta cuenta pertenece a otra aplicación".into()),
+        Some(_) => {}
+        None => store.set_setting("app", Some(app.as_str()))?,
+    }
     Ok((me, store))
 }
 
@@ -126,6 +157,99 @@ pub fn guardar_dato(coleccion: &str, registro: &str, campo: &str, valor: &str) -
     let (me, store) = abrir().map_err(js)?;
     let device = crate::identity::to_hex(&me.public);
     crate::sync::put_as(&store, &device, &me.id(), crate::sync::Policy::Lww, coleccion, registro, campo, Some(valor)).map_err(js)
+}
+
+
+/// Separador entre el nombre del campo y el número de trozo: `documento\x1ftrozo3`.
+/// Es un carácter de control que no aparece en nombres de campo normales.
+const TROZO: &str = "\u{1f}trozo";
+
+/// Cuántos bytes caben en un trozo. Deja margen bajo el límite de la sincronización.
+const TAM_TROZO: usize = 7 * 1024;
+
+/// Corta un texto en trozos de como mucho `TAM_TROZO` bytes, sin partir una letra.
+fn cortar(texto: &str) -> Vec<&str> {
+    let mut trozos = Vec::new();
+    let mut inicio = 0;
+    while inicio < texto.len() {
+        let mut fin = (inicio + TAM_TROZO).min(texto.len());
+        while fin > inicio && !texto.is_char_boundary(fin) {
+            fin -= 1;
+        }
+        trozos.push(&texto[inicio..fin]);
+        inicio = fin;
+    }
+    if trozos.is_empty() {
+        trozos.push("");
+    }
+    trozos
+}
+
+/// Guarda un valor de cualquier tamaño, partiéndolo si pasa del límite por campo.
+///
+/// Los valores de la sincronización están topados a 8 KB porque cada uno viaja
+/// como una operación. Un documento (una hoja de cálculo, un texto largo, una
+/// imagen en base64) pasa de ahí sin esfuerzo, así que aquí se guarda partido en
+/// campos auxiliares y se vuelve a unir al leerlo. Para quien usa el SDK es un
+/// solo valor.
+#[wasm_bindgen]
+pub fn guardar_grande(coleccion: &str, registro: &str, campo: &str, valor: &str) -> Result<(), JsError> {
+    let (me, store) = abrir().map_err(js)?;
+    let device = crate::identity::to_hex(&me.public);
+    let trozos = cortar(valor);
+
+    // Cuántos trozos había antes, para borrar los que sobren si el valor encogió.
+    let antes: usize = crate::sync::records(&store, coleccion)
+        .map_err(js)?
+        .iter()
+        .find(|r| r.id == registro)
+        .and_then(|r| {
+            r.fields
+                .iter()
+                .find(|(nombre, _)| *nombre == format!("{campo}{TROZO}s"))
+                .and_then(|(_, v)| v.parse::<usize>().ok())
+        })
+        .unwrap_or(0);
+
+    for (i, trozo) in trozos.iter().enumerate() {
+        crate::sync::put_as(&store, &device, &me.id(), crate::sync::Policy::Lww, coleccion, registro,
+            &format!("{campo}{TROZO}{i}"), Some(trozo)).map_err(js)?;
+    }
+    for i in trozos.len()..antes {
+        crate::sync::put_as(&store, &device, &me.id(), crate::sync::Policy::Lww, coleccion, registro,
+            &format!("{campo}{TROZO}{i}"), None).map_err(js)?;
+    }
+    crate::sync::put_as(&store, &device, &me.id(), crate::sync::Policy::Lww, coleccion, registro,
+        &format!("{campo}{TROZO}s"), Some(&trozos.len().to_string())).map_err(js)?;
+    Ok(())
+}
+
+/// Lee un valor guardado con `guardar_grande`, ya unido. Cadena vacía si no está.
+#[wasm_bindgen]
+pub fn leer_grande(coleccion: &str, registro: &str, campo: &str) -> Result<String, JsError> {
+    let (_, store) = abrir().map_err(js)?;
+    let registros = crate::sync::records(&store, coleccion).map_err(js)?;
+    let Some(r) = registros.iter().find(|r| r.id == registro) else { return Ok(String::new()) };
+
+    let buscar = |nombre: &str| -> Option<String> {
+        r.fields.iter().find(|(n, _)| n == nombre).map(|(_, v)| v.clone())
+    };
+
+    let cuantos: usize = match buscar(&format!("{campo}{TROZO}s")) {
+        Some(v) => v.parse().unwrap_or(0),
+        // Compatible con lo que se guardó antes como un solo campo.
+        None => return Ok(buscar(campo).unwrap_or_default()),
+    };
+
+    let mut salida = String::new();
+    for i in 0..cuantos {
+        match buscar(&format!("{campo}{TROZO}{i}")) {
+            Some(trozo) => salida.push_str(&trozo),
+            // Falta un trozo (sincronización a medias): mejor nada que un dato roto.
+            None => return Ok(String::new()),
+        }
+    }
+    Ok(salida)
 }
 
 /// Registros de una colección en JSON: `[{"id": …, "campos": {…}}]`.
@@ -160,14 +284,15 @@ pub fn directorio(relay: &str) -> Result<String, JsError> {
 pub fn invitacion() -> Result<String, JsError> {
     let (me, store) = abrir().map_err(js)?;
     let ruta = store.relay_route().map_err(js)?.ok_or_else(|| js("no hay ningún relé"))?;
-    Ok(crate::invite(&me, &ruta))
+    Ok(crate::invite(&me, &app().map_err(js)?, &ruta))
 }
 
 /// Añade un contacto de confianza con su invitación.
 #[wasm_bindgen]
 pub fn anadir_contacto(nombre: &str, invitacion: &str) -> Result<(), JsError> {
     let (_, store) = abrir().map_err(js)?;
-    let (key, ruta) = crate::parse_invite(invitacion).map_err(js)?;
+    // Una invitación de otra app se rechaza aquí mismo.
+    let (key, ruta, _) = crate::parse_invite(invitacion, &app().map_err(js)?).map_err(js)?;
     store.add_contact(nombre, &key, Some(&ruta)).map_err(js)
 }
 
@@ -222,7 +347,7 @@ pub fn revisar(ms: u32) -> Result<u32, JsError> {
         Some(b) => b,
         None => {
             let relay = store.relays().map_err(js)?.into_iter().next().ok_or_else(|| js("no hay ningún relé"))?;
-            let control = crate::relay::register(&relay, &store.mailbox_secret().map_err(js)?).map_err(js)?;
+            let control = crate::relay::register(&relay, &store.mailbox_secret().map_err(js)?, &app().map_err(js)?).map_err(js)?;
             Buzon { control, relay, ping: Instant::now(), cartas: None, linea: Vec::new() }
         }
     };

@@ -9,10 +9,14 @@ use std::{
     thread,
 };
 
+const APP: &str = "prueba";
+
 fn device(name: &str) -> (PathBuf, Identity) {
     let dir = std::env::temp_dir().join(format!("mm-med-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let id = Identity::create(&dir, &Plain).unwrap();
+    // Sin App ID la cuenta no habla con nadie: se le pone el de las pruebas.
+    Store::open(&dir, id.db_key()).unwrap().set_setting("app", Some(APP)).unwrap();
     (dir, id)
 }
 
@@ -106,6 +110,8 @@ fn medidas() {
     let p = mobilemesh_core::Pending::create(&tablet_dir, &Plain).unwrap();
     let cert = mobilemesh_core::approve_link(&alice.1, &mobilemesh_core::link_request(&p)).unwrap();
     let tablet = (tablet_dir.clone(), mobilemesh_core::complete_link(p, &tablet_dir, &Plain, &cert).unwrap());
+    // Un dispositivo recién vinculado abre su base con el App ID de la app (lo hace el SDK).
+    st(&tablet).set_setting("app", Some(APP)).unwrap();
     let sync_once = || {
         let (addr, bytes, h) = counted(&tablet);
         mobilemesh_core::sync_with(&st(&alice), &alice.1, &addr).unwrap();

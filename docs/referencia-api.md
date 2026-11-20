@@ -4,7 +4,7 @@
 > Para regenerarlo: `python3 tools/generar-referencia.py`
 > Si cambias una función, vuelve a ejecutar el script; los cambios manuales se pierden.
 
-Resumen: Android (funciones y propiedades): 66 · Web (métodos): 13 · React Native (métodos): 39 · CLI mesh (órdenes): 40 · MCP (herramientas): 8.
+Resumen: Android (funciones y propiedades): 66 · Web (métodos): 15 · React Native (métodos): 39 · CLI mesh (órdenes): 40 · MCP (herramientas): 8.
 
 Los nombres de Android van en inglés (es la API). En web, React Native, CLI y MCP los nombres son en español, tal como están en el código.
 
@@ -179,9 +179,11 @@ Archivo `web/mobilemesh.js`; se importa como módulo (`import { MobileMesh } fro
 
 | Método | Qué hace |
 |---|---|
-| `static async start()` | Starts MobileMesh in this page: loads the core in a worker and connects the network. |
+| `static async start({ appId } = {})` | Starts MobileMesh in this page: loads the core in a worker and connects the network. |
 | `account()` | Identifier of this browser's account (created the first time and kept). |
 | `save(collection, record, field, value)` | Saves one field of a record in a collection (encrypted and permanent). |
+| `saveLarge(collection, record, field, value)` | Saves a value of any size (it is split internally if needed). |
+| `readLarge(collection, record, field)` | Reads a value saved with saveLarge(), already joined. |
 | `async all(collection)` | Records of a collection: [{id, campos: {…}}]. |
 | `invitation()` | My invitation (so another person can add me as a contact). |
 | `addContact(name, invitation)` | Adds a contact under a name, using the invitation they shared. |

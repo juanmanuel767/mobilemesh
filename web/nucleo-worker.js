@@ -26,6 +26,8 @@ self.onmessage = async ({ data }) => {
     self.mmRed = data.red;
     try {
       await init();
+      // Marca («lote») de esta web: sin ella el núcleo no abre la cuenta.
+      nucleo.usar_app(data.appId);
       // Almacén permanente (OPFS). Al recargar la página, el trabajador anterior tarda un poco en
       // soltarlo: se reintenta unos segundos antes de rendirse (lo encontró una app de prueba).
       for (let intento = 0; ; intento++) {

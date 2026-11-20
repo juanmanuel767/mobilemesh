@@ -152,7 +152,7 @@ pub fn purge(store: &Store) -> Result<usize> {
 pub fn save_account(store: &Store, me: &Identity, route: &str, key: &str, user: &str, pass: &str) -> Result<()> {
     let id = locator(user, pass)?;
     let code = recovery::export(me, pass)?;
-    let mut s = crate::connect(store, me, route, &crate::identity::from_hex(key)?)?;
+    let mut s = crate::connect_infra(store, me, route, &crate::identity::from_hex(key)?)?;
     s.send(&Frame::CuentaPut { id, code })?;
     match s.recv()? {
         Some(Frame::Ack { .. }) => Ok(()),
@@ -169,7 +169,7 @@ pub fn find_account(tmp: &Path, route: &str, key: &str, user: &str, pass: &str) 
     let paso = Identity::create(tmp, &Plain)?;
     let code = {
         let store = Store::open(tmp, paso.db_key())?;
-        let mut s = crate::connect(&store, &paso, route, &crate::identity::from_hex(key)?)?;
+        let mut s = crate::connect_infra(&store, &paso, route, &crate::identity::from_hex(key)?)?;
         s.send(&Frame::CuentaGet { id })?;
         match s.recv()? {
             Some(Frame::Cuenta { code: Some(c) }) => c,
