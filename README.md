@@ -100,7 +100,16 @@ En `settings.gradle.kts` y en el `build.gradle.kts` de tu app:
 dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
 
 dependencies { implementation("com.github.juanmanuel767:mobilemesh:v0.2.1") }
+
+// La marca de tu app: se genera sola la primera vez que compilas.
+apply(from = "mobilemesh.gradle.kts")
 ```
+
+Esa última línea (el archivo está en [`tools/mobilemesh.gradle.kts`](tools/mobilemesh.gradle.kts)) crea
+`src/main/assets/mobilemesh.properties` con la **marca** de tu app, algo como `appId=mm-5c00d953…`.
+Guárdala en tu repositorio y no la borres: viaja dentro del APK y es la misma en todas las copias
+que publiques, así que **solo tus usuarios se comunican entre sí**. Otra app tendrá otra marca y las
+dos redes nunca se mezclan, aunque compartan los mismos relés.
 
 Requisitos: `compileSdk` 35 o superior · `minSdk` 28 · JDK 17 · Kotlin 2.2.0 o superior
 
@@ -129,9 +138,10 @@ El paquete `npm install mobilemesh` está preparado y se publicará en breve; ha
 ```js
 import { MobileMesh } from "./mobilemesh/mobilemesh.js";
 
-const mesh = await MobileMesh.iniciar();                    // crea la cuenta la primera vez
-await mesh.guardar("tareas", "t1", "titulo", "Comprar pan"); // cifrado y en el dispositivo
-console.log(await mesh.datos("tareas"));
+// Sin appId, la marca de tu app es el dominio de la página.
+const mesh = await MobileMesh.start({ appId: "mi-app" });  // crea la cuenta la primera vez
+await mesh.save("tareas", "t1", "titulo", "Comprar pan");  // cifrado y en el dispositivo
+console.log(await mesh.all("tareas"));
 ```
 
 **3. Dos cabeceras** en tu servidor (el SDK usa memoria compartida):
