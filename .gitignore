@@ -29,3 +29,8 @@ examples/lote-b/.gradle/
 mobilemesh-web.tar.gz
 # Librería compilada del SDK de Node
 node/mobilemesh.node
+# Ejemplo de Flutter: proyecto generado y compilación
+flutter/example/build/
+flutter/example/.dart_tool/
+flutter/example/android/.gradle/
+flutter/.dart_tool/
