@@ -12,7 +12,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 import org.json.JSONArray
 import org.json.JSONObject
 import org.mobilemesh.sdk.CopiaAutomatica
-import org.mobilemesh.sdk.EstadoCuenta
+import org.mobilemesh.sdk.AccountState
 import org.mobilemesh.sdk.MobileMesh
 import org.mobilemesh.sdk.Permisos
 import java.io.File
@@ -58,10 +58,12 @@ class MobileMeshModule(private val ctx: ReactApplicationContext) : ReactContextB
     /** "sin cuenta" | "bloqueado" | "lista" */
     @ReactMethod
     fun estadoCuenta(p: Promise) = trabajar(p) {
-        when (MobileMesh.estado(ctx)) {
-            EstadoCuenta.SIN_CUENTA -> "sin cuenta"
-            EstadoCuenta.BLOQUEADO -> "bloqueado"
-            EstadoCuenta.LISTA -> "lista"
+        // Los nombres del enum están en inglés; los de español son alias y no valen para un
+        // `when` exhaustivo.
+        when (MobileMesh.state(ctx)) {
+            AccountState.NO_ACCOUNT -> "sin cuenta"
+            AccountState.LOCKED -> "bloqueado"
+            AccountState.READY -> "lista"
         }
     }
 
