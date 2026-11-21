@@ -64,7 +64,10 @@ impl Sealer for Plain {
 /// bloqueado (no porque esté dañada). Nunca hay que ofrecer borrar nada en ese caso.
 pub const LOCKED: &str = "BLOQUEADO";
 
-const DAMAGED: &str = "la identidad de este dispositivo está dañada; hay que restaurarla desde la copia de recuperación";
+/// Prefijo del error cuando de verdad no hay ninguna identidad guardada en el directorio.
+pub const NO_IDENTITY: &str = "sin identidad";
+
+pub const DAMAGED: &str = "la identidad de este dispositivo está dañada; hay que restaurarla desde la copia de recuperación";
 
 fn device_keys() -> Result<(Vec<u8>, Vec<u8>)> {
     let kp = snow::Builder::new(NOISE.parse()?).generate_keypair()?;
@@ -143,6 +146,34 @@ impl Identity {
         }
     }
 
+    /// ¿Se puede reemplazar la identidad de este directorio sin destruir nada?
+    ///
+    /// `Ok(true)` solo cuando de verdad no hay ninguna, está dañada o quedó a medio
+    /// vincular. `Ok(false)` cuando hay una válida. `Err` cuando NO SE SABE (teléfono
+    /// bloqueado o fallo de la plataforma): ahí no se toca, porque la clave puede estar
+    /// perfectamente bien y al sobrescribirla se pierde también la clave de la base.
+    ///
+    /// Existe porque «no se pudo cargar» no significa «no hay identidad»: un teléfono bloqueado
+    /// devuelve error aunque la clave esté intacta, y reemplazarla destruiría la clave del
+    /// dispositivo y la de la base de datos derivada de ella, con los datos locales.
+    pub fn replaceable(dir: &Path, s: &dyn Sealer) -> Result<bool> {
+        match load_any(dir, s) {
+            Ok(Stored::Ready(_)) => Ok(false),
+            Ok(Stored::Pending(_)) => Ok(true),
+            Err(e) => {
+                let text = e.to_string();
+                if text.starts_with(LOCKED) {
+                    Err(e)
+                } else if text.starts_with(NO_IDENTITY) || text.starts_with(DAMAGED) {
+                    Ok(true)
+                } else {
+                    // Error que no reconocemos: ante la duda no se destruye nada.
+                    Err(e)
+                }
+            }
+        }
+    }
+
     /// Clave para cifrar la base de datos local. Sale de la clave de este dispositivo, así que
     /// queda protegida igual que ella (Keystore) y no hace falta guardarla aparte.
     pub fn db_key(&self) -> [u8; 32] {
@@ -188,7 +219,7 @@ pub fn exists(dir: &Path) -> bool {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn read_stored(dir: &Path) -> Result<Vec<u8>> {
-    Ok(fs::read(dir.join(FILE)).map_err(|e| format!("sin identidad en {}: {e}", dir.display()))?)
+    Ok(fs::read(dir.join(FILE)).map_err(|e| format!("{NO_IDENTITY} en {}: {e}", dir.display()))?)
 }
 
 // En el navegador no hay archivos: la identidad va en su propia base SQLite (guardada en OPFS).
@@ -206,7 +237,7 @@ pub fn exists(dir: &Path) -> bool {
 
 #[cfg(target_arch = "wasm32")]
 fn read_stored(dir: &Path) -> Result<Vec<u8>> {
-    Ok(kv(dir)?.query_row("SELECT v FROM identidad WHERE id = 1", [], |r| r.get(0)).map_err(|_| "sin identidad en este navegador")?)
+    Ok(kv(dir)?.query_row("SELECT v FROM identidad WHERE id = 1", [], |r| r.get(0)).map_err(|_| format!("{NO_IDENTITY} en este navegador"))?)
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -420,7 +420,7 @@ impl Mesh {
     #[uniffi::constructor]
     pub fn restore(dir: String, app: String, guard: Arc<dyn KeyGuard>, code: String, pass: String) -> R<Arc<Self>> {
         let (dir, guard) = (PathBuf::from(dir), Guard(guard));
-        if Identity::load(&dir, &guard).is_ok() {
+        if !Identity::replaceable(&dir, &guard)? {
             return Err(fail("este dispositivo ya tiene una identidad válida; no se reemplaza"));
         }
         let me = recovery::import(&code, &pass)?;
@@ -433,7 +433,7 @@ impl Mesh {
     #[uniffi::constructor]
     pub fn restore_paper(dir: String, app: String, guard: Arc<dyn KeyGuard>, code: String) -> R<Arc<Self>> {
         let (dir, guard) = (PathBuf::from(dir), Guard(guard));
-        if Identity::load(&dir, &guard).is_ok() {
+        if !Identity::replaceable(&dir, &guard)? {
             return Err(fail("este dispositivo ya tiene una identidad válida; no se reemplaza"));
         }
         let me = recovery::from_paper(&code)?;
@@ -446,7 +446,7 @@ impl Mesh {
     #[uniffi::constructor]
     pub fn recover_from_guardian(dir: String, app: String, guard: Arc<dyn KeyGuard>, user: String, pass: String) -> R<Arc<Self>> {
         let (dir, guard) = (PathBuf::from(dir), Guard(guard));
-        if Identity::load(&dir, &guard).is_ok() {
+        if !Identity::replaceable(&dir, &guard)? {
             return Err(fail("este dispositivo ya tiene una identidad válida; no se reemplaza"));
         }
         let (key, route) = universal_guardian(None)?;
