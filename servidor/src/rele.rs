@@ -34,6 +34,14 @@ const MAX_PENDING: usize = 256;
 const MAX_PENDING_PER_BOX: usize = 4;
 const MAX_LETTERS_PER_BOX: usize = 200;
 const MAX_LETTER_BYTES: usize = 64 * 1024 * 1024;
+/// Lo que un solo origen (IP, o /64 en IPv6) puede tener guardado a la vez: un octavo del cupo
+/// global. DEPOSITAR no autentica y el id del buzón lo elige quien deposita; sin cuota por origen,
+/// un solo origen con unos pocos ids falsos llenaría `MAX_LETTER_BYTES` y dejaría sin buzón a todo
+/// el mundo durante `LETTER_TTL` (7 días). Con esta cuota hacen falta 8 orígenes distintos.
+/// Limitación: las conexiones que entran por el puente WebSocket llegan al relé como 127.0.0.1,
+/// así que todos los clientes web comparten el mismo cubo de cuota y uno abusivo puede agotar la
+/// parte de los clientes web. Arreglarlo exige que el puente pase la IP real al relé (cambio aparte).
+const MAX_LETTER_BYTES_POR_IP: usize = MAX_LETTER_BYTES / 8;
 /// Lo que ocupa en memoria cada carta aparte de su texto (ficha, hora, buzón): así un aluvión de
 /// cartas de 1 byte también choca con `MAX_LETTER_BYTES`.
 const LETTER_OVERHEAD: usize = 256;
@@ -76,9 +84,11 @@ struct State {
     pending: HashMap<String, (String, TcpStream)>,
     /// conexiones abiertas por IP
     conns: HashMap<IpAddr, usize>,
-    /// buzón → cartas (ficha, carta, cuándo llegó)
-    letters: HashMap<String, Vec<(String, String, std::time::Instant)>>,
+    /// buzón → cartas (ficha, carta, cuándo llegó, origen del que llegó)
+    letters: HashMap<String, Vec<(String, String, std::time::Instant, IpAddr)>>,
     letter_bytes: usize,
+    /// Bytes guardados ahora mismo que llegaron de cada origen (para `MAX_LETTER_BYTES_POR_IP`).
+    deposit_bytes: HashMap<IpAddr, usize>,
     last_purge: Option<Instant>,
     /// buzón → (ficha de avisos, último aviso)
     push: HashMap<String, (String, Option<std::time::Instant>)>,
@@ -106,31 +116,48 @@ impl State {
         }
         self.last_purge = Some(Instant::now());
         let mut freed = 0;
+        let mut por_ip: Vec<(IpAddr, usize)> = Vec::new();
         for list in self.letters.values_mut() {
-            list.retain(|(_, l, at)| {
+            list.retain(|(_, l, at, ip)| {
                 let keep = at.elapsed() < LETTER_TTL;
                 if !keep {
                     freed += l.len() + LETTER_OVERHEAD;
+                    por_ip.push((*ip, l.len() + LETTER_OVERHEAD));
                 }
                 keep
             });
+        }
+        for (ip, cost) in por_ip {
+            self.release_deposit(ip, cost);
         }
         self.letters.retain(|_, l| !l.is_empty());
         self.letter_bytes -= freed;
     }
 
-    /// Guarda una carta si caben (por buzón y en total). Devuelve si la guardó.
-    fn keep_letter(&mut self, id: &str, letter: &str) -> Result<bool> {
+    /// Devuelve a un origen la cuota de una carta que ya no se guarda.
+    fn release_deposit(&mut self, ip: IpAddr, cost: usize) {
+        if let Some(b) = self.deposit_bytes.get_mut(&ip) {
+            *b = b.saturating_sub(cost);
+            if *b == 0 {
+                self.deposit_bytes.remove(&ip);
+            }
+        }
+    }
+
+    /// Guarda una carta si caben (por buzón, por origen y en total). Devuelve si la guardó.
+    fn keep_letter(&mut self, id: &str, letter: &str, ip: IpAddr) -> Result<bool> {
         self.purge_old_letters();
         let full = self.letters.get(id).is_some_and(|l| l.len() >= MAX_LETTERS_PER_BOX);
         let cost = letter.len() + LETTER_OVERHEAD;
-        if full || self.letter_bytes + cost > MAX_LETTER_BYTES {
+        let del_origen = self.deposit_bytes.get(&ip).copied().unwrap_or(0);
+        if full || self.letter_bytes + cost > MAX_LETTER_BYTES || del_origen + cost > MAX_LETTER_BYTES_POR_IP {
             return Ok(false);
         }
         let mut token = [0u8; 16];
         getrandom::fill(&mut token).map_err(|e| e.to_string())?;
         self.letter_bytes += cost;
-        self.letters.entry(id.to_string()).or_default().push((to_hex(&token), letter.to_string(), Instant::now()));
+        *self.deposit_bytes.entry(ip).or_default() += cost;
+        self.letters.entry(id.to_string()).or_default().push((to_hex(&token), letter.to_string(), Instant::now(), ip));
         Ok(true)
     }
 }
@@ -387,7 +414,7 @@ impl Relay {
             && letter.bytes().all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b))
             && {
                 let mut st = self.lock();
-                if !st.keep_letter(id, letter)? {
+                if !st.keep_letter(id, letter, ip_key(s.peer_addr()?.ip()))? {
                     false
                 } else {
                     if self.notifier.is_some()
@@ -457,7 +484,7 @@ impl Relay {
         let letters: Vec<(String, String)> = {
             let mut st = self.lock();
             st.purge_old_letters();
-            st.letters.get(&id).map(|l| l.iter().map(|(t, c, _)| (t.clone(), c.clone())).collect()).unwrap_or_default()
+            st.letters.get(&id).map(|l| l.iter().map(|(t, c, _, _)| (t.clone(), c.clone())).collect()).unwrap_or_default()
         };
         for (token, letter) in &letters {
             writeln!(s, "CARTA {token} {letter}")?;
@@ -467,10 +494,11 @@ impl Relay {
             let Some(token) = line.strip_prefix("RECIBIDA ") else { break };
             let mut st = self.lock();
             if let Some(list) = st.letters.get_mut(&id)
-                && let Some(i) = list.iter().position(|(t, _, _)| t == token)
+                && let Some(i) = list.iter().position(|(t, _, _, _)| t == token)
             {
-                let (_, letter, _) = list.remove(i);
+                let (_, letter, _, ip) = list.remove(i);
                 st.letter_bytes -= letter.len() + LETTER_OVERHEAD;
+                st.release_deposit(ip, letter.len() + LETTER_OVERHEAD);
             }
         }
         Ok(())
@@ -606,7 +634,9 @@ mod pruebas {
     fn un_aluvion_de_cartas_pequenas_choca_con_el_tope() {
         let mut st = super::State::default();
         let mut n = 0;
-        while st.keep_letter(&format!("{n:032}"), "A").unwrap() {
+        // Un origen distinto por cada octavo del cupo: así solo choca el tope global, no la cuota por origen.
+        let por_origen = super::MAX_LETTER_BYTES_POR_IP / (1 + super::LETTER_OVERHEAD);
+        while st.keep_letter(&format!("{n:032}"), "A", std::net::Ipv4Addr::new(10, 0, 0, (n / por_origen) as u8).into()).unwrap() {
             n += 1;
         }
         // Cada carta cuenta su texto y lo que ocupa aparte: el tope llega mucho antes de agotar la memoria.
@@ -614,9 +644,35 @@ mod pruebas {
     }
 
     #[test]
+    fn un_origen_no_pasa_de_su_cuota_aunque_cambie_de_buzon() {
+        let mut st = super::State::default();
+        let a: std::net::IpAddr = "1.2.3.4".parse().unwrap();
+        let b: std::net::IpAddr = "5.6.7.8".parse().unwrap();
+        let carta = "A".repeat(super::MAX_LETTER);
+        let mut n = 0;
+        while st.keep_letter(&format!("{n:032}"), &carta, a).unwrap() {
+            n += 1;
+        }
+        // El origen se queda en su cuota y no llena el cupo global.
+        assert!(n > 0 && st.deposit_bytes[&a] <= super::MAX_LETTER_BYTES_POR_IP);
+        assert!(st.letter_bytes < super::MAX_LETTER_BYTES);
+        // Otro origen distinto sigue pudiendo depositar.
+        assert!(st.keep_letter(&format!("{:032}", 9999), "carta", b).unwrap());
+        // Al caducar las cartas del primero recupera su cuota.
+        for l in st.letters.values_mut() {
+            for c in l.iter_mut().filter(|c| c.3 == a) {
+                c.2 -= super::LETTER_TTL + std::time::Duration::from_secs(1);
+            }
+        }
+        st.last_purge = None;
+        assert!(st.keep_letter(&format!("{:032}", 10000), "carta", a).unwrap());
+        assert_eq!(st.deposit_bytes[&a], "carta".len() + super::LETTER_OVERHEAD);
+    }
+
+    #[test]
     fn el_estado_cuenta_sin_decir_quien() {
         let r = super::Relay::default();
-        r.lock().keep_letter(&"a".repeat(32), "carta").unwrap();
+        r.lock().keep_letter(&"a".repeat(32), "carta", "1.2.3.4".parse().unwrap()).unwrap();
         let e = r.estado();
         assert!(e.starts_with('{') && e.ends_with('}'), "{e}");
         assert!(e.contains(r#""cartas":1"#) && e.contains(r#""usuarios":0"#), "{e}");
