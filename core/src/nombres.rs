@@ -114,14 +114,21 @@ pub fn on_put(s: &mut Session, store: &Store, peer: &str, app: &str, nombre: &st
         _ => return bad(s, "la invitación no es de tu cuenta"),
     }
     let clave = format!("nombre:{nombre}");
-    if store.setting(&clave)?.is_some_and(|v| v.split_once('\n').is_none_or(|(dueno, _)| dueno != peer)) {
+    let actual = store.setting(&clave)?;
+    if actual.as_ref().is_some_and(|v| v.split_once('\n').is_none_or(|(dueno, _)| dueno != peer)) {
+        return bad(s, "ese nombre ya lo usa otra persona");
+    }
+    let valor = format!("{peer}\n{}", invitacion.trim());
+    if actual.is_some() {
+        store.set_setting(&clave, Some(&valor))?;
+    } else if !store.claim_setting(&clave, &valor)? {
+        // Otra cuenta lo reclamó entre la comprobación y la escritura: el primero se lo queda.
         return bad(s, "ese nombre ya lo usa otra persona");
     }
     // Una cuenta, un nombre: si tenía otro, se libera.
     if let Some(viejo) = store.setting(&format!("cuenta-nombre:{peer}"))?.filter(|v| *v != nombre) {
         store.set_setting(&format!("nombre:{viejo}"), None)?;
     }
-    store.set_setting(&clave, Some(&format!("{peer}\n{}", invitacion.trim())))?;
     store.set_setting(&format!("cuenta-nombre:{peer}"), Some(&nombre))?;
     s.send(&Frame::Ack { id: "nombre".into() })
 }

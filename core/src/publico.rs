@@ -80,7 +80,10 @@ pub fn on_put(s: &mut Session, store: &Store, peer: &str, app: &str, coleccion: 
         }
         _ => {}
     }
-    store.public_put(&app, &col, &id, peer, campos)?;
+    // El SQL solo deja escribir al autor: si otra cuenta se adelantó entre la comprobación y aquí, se rechaza.
+    if !store.public_put(&app, &col, &id, peer, campos)? {
+        return bad(s, "ese documento es de otra cuenta");
+    }
     s.send(&Frame::Ack { id: "publico".into() })
 }
 
@@ -91,10 +94,10 @@ pub fn on_delete(s: &mut Session, store: &Store, peer: &str, app: &str, coleccio
     let (Ok(app), Some(col), Some(id)) = (crate::nombres::normalize_app(app), nombre(coleccion), nombre(id)) else {
         return bad(s, "colección o documento no válido");
     };
-    if store.public_author(&app, &col, &id)?.is_some_and(|autor| autor != peer) {
+    // Borrar algo que no existe sigue siendo un Ack; solo se rechaza si existe y es de otra cuenta.
+    if store.public_delete(&app, &col, &id, peer)? == 0 && store.public_author(&app, &col, &id)?.is_some_and(|autor| autor != peer) {
         return bad(s, "ese documento es de otra cuenta");
     }
-    store.public_delete(&app, &col, &id)?;
     s.send(&Frame::Ack { id: "publico".into() })
 }
 

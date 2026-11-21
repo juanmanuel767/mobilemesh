@@ -852,6 +852,17 @@ impl Store {
         Ok(())
     }
 
+    /// Reclama el ajuste `k` solo si nadie lo tiene: no sobrescribe nunca. Devuelve `true` si lo
+    /// escribió y `false` si ya existía (otra cuenta se adelantó). Sirve para que, al registrar un
+    /// nombre, el primero que llega se lo quede aunque dos peticiones coincidan.
+    pub fn claim_setting(&self, k: &str, v: &str) -> Result<bool> {
+        let filas = self.db.execute(
+            "INSERT INTO settings(k, v) VALUES (?1, ?2) ON CONFLICT(k) DO NOTHING",
+            params![k, self.seal(&format!("ajuste:{k}"), v)?],
+        )?;
+        Ok(filas == 1)
+    }
+
     /// Relés en los que tengo buzón: los que eligió la app («a|b») o, si no eligió ninguno, dos de
     /// los universales (del directorio o de la lista fija). `SIN_RELE` los quita todos.
     pub fn relays(&self) -> Result<Vec<String>> {
@@ -1145,18 +1156,27 @@ impl Store {
         Ok(n as usize)
     }
 
-    pub fn public_put(&self, app: &str, col: &str, id: &str, autor: &str, campos: &str) -> Result<()> {
-        self.db.execute(
+    /// Publica o actualiza un documento. El `WHERE` del upsert solo deja actualizar a su autor: así la
+    /// comprobación de autoría y la escritura son una sola sentencia y dos cuentas que publican a la
+    /// vez el mismo id no pueden pisarse. Devuelve `true` si la fila quedó escrita y `false` si la
+    /// rechazó por ser de otra cuenta.
+    pub fn public_put(&self, app: &str, col: &str, id: &str, autor: &str, campos: &str) -> Result<bool> {
+        let filas = self.db.execute(
             "INSERT INTO publicos(app, coleccion, id, autor, campos) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(app, coleccion, id) DO UPDATE SET campos = excluded.campos, actualizado = unixepoch()",
+             ON CONFLICT(app, coleccion, id) DO UPDATE SET campos = excluded.campos, actualizado = unixepoch()
+             WHERE publicos.autor = excluded.autor",
             params![app, col, id, autor, campos],
         )?;
-        Ok(())
+        Ok(filas == 1)
     }
 
-    pub fn public_delete(&self, app: &str, col: &str, id: &str) -> Result<()> {
-        self.db.execute("DELETE FROM publicos WHERE app = ?1 AND coleccion = ?2 AND id = ?3", params![app, col, id])?;
-        Ok(())
+    /// Borra un documento solo si es de `autor` (condición en el propio SQL, sin carrera).
+    /// Devuelve las filas borradas: 0 si no existía o es de otra cuenta.
+    pub fn public_delete(&self, app: &str, col: &str, id: &str, autor: &str) -> Result<usize> {
+        Ok(self.db.execute(
+            "DELETE FROM publicos WHERE app = ?1 AND coleccion = ?2 AND id = ?3 AND autor = ?4",
+            params![app, col, id, autor],
+        )?)
     }
 
     /// Todos los documentos de una colección pública: (id, autor, campos).
