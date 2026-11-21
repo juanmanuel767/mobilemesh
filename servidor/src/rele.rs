@@ -15,7 +15,7 @@ use std::{
     net::{IpAddr, Ipv6Addr, Shutdown, TcpListener, TcpStream},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -63,6 +63,10 @@ fn hilo<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> std::io::R
 const LETTER_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
 /// Como mucho un aviso por buzón cada este tiempo (varias cartas seguidas = un aviso).
 const NOTIFY_EVERY: Duration = Duration::from_secs(20);
+/// Procesos de aviso vivos a la vez, como máximo. DEPOSITAR no está autenticado y los buzones son
+/// gratis (basta una clave Ed25519 nueva), y el límite de `NOTIFY_EVERY` es por buzón: sin un tope
+/// global, un atacante acumularía procesos y consumiría la cuota de avisos del operador.
+const MAX_AVISOS: usize = 32;
 
 #[derive(Default)]
 struct State {
@@ -176,6 +180,8 @@ pub struct Relay {
     calls: Arc<AtomicU64>,
     /// Programa que se ejecuta con la ficha de avisos al llegar una carta (opcional).
     pub notifier: Option<String>,
+    /// Procesos de aviso vivos en este momento (tope: `MAX_AVISOS`).
+    avisos: Arc<AtomicUsize>,
     /// Velocidad máxima, sumando todas las conexiones empalmadas (bytes por segundo), para que el
     /// relé no deje sin internet la casa donde está. `None`: sin límite.
     pub limite: Option<u64>,
@@ -374,6 +380,7 @@ impl Relay {
     /// Guarda una carta para un buzón (aunque su dueño esté desconectado).
     fn deposit_letter(&self, mut s: TcpStream, arg: &str) -> Result<()> {
         let (id, letter) = arg.split_once(' ').ok_or("carta incompleta")?;
+        let mut aviso: Option<String> = None;
         let ok = id.len() == 32
             && !letter.is_empty()
             && letter.len() <= MAX_LETTER
@@ -383,18 +390,44 @@ impl Relay {
                 if !st.keep_letter(id, letter)? {
                     false
                 } else {
-                    if let (Some(cmd), Some((push, last))) = (&self.notifier, st.push.get_mut(id))
+                    if self.notifier.is_some()
+                        && self.avisos.load(Ordering::Relaxed) < MAX_AVISOS
+                        && let Some((push, last)) = st.push.get_mut(id)
                         && last.is_none_or(|t| t.elapsed() > NOTIFY_EVERY)
                     {
                         *last = Some(std::time::Instant::now());
-                        // La ficha va como argumento, nunca dentro de una orden de la terminal.
-                        let _ = std::process::Command::new(cmd).arg(push.as_str()).spawn().map(|mut c| {
-                            thread::spawn(move || c.wait());
-                        });
+                        aviso = Some(push.clone());
                     }
                     true
                 }
             };
+        // Fuera del mutex: el fork/exec no debe bloquear el relé entero.
+        if let (Some(cmd), Some(ficha)) = (&self.notifier, aviso)
+            && self
+                .avisos
+                .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |n| (n < MAX_AVISOS).then_some(n + 1))
+                .is_ok()
+        {
+            // La ficha va como argumento, nunca dentro de una orden de la terminal.
+            match std::process::Command::new(cmd).arg(ficha).spawn() {
+                Ok(mut hijo) => {
+                    let avisos = self.avisos.clone();
+                    let contador = avisos.clone();
+                    // Si el hilo no se crea, el cierre se descarta sin ejecutarse: se decrementa aquí.
+                    if hilo(move || {
+                        let _ = hijo.wait();
+                        avisos.fetch_sub(1, Ordering::AcqRel);
+                    })
+                    .is_err()
+                    {
+                        contador.fetch_sub(1, Ordering::AcqRel);
+                    }
+                }
+                Err(_) => {
+                    self.avisos.fetch_sub(1, Ordering::AcqRel);
+                }
+            }
+        }
         writeln!(s, "{}", if ok { "OK" } else { "NO" })?;
         Ok(())
     }
