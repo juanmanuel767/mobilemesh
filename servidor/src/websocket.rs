@@ -47,7 +47,17 @@ pub fn serve(listener: TcpListener, relay: SocketAddr, tls: Option<(String, Stri
             let mut primero = [0u8; 1];
             // Sin plazo, quien conecta y no manda nada dejaría este hilo esperando para siempre.
             let _ = stream.set_read_timeout(Some(WAIT));
-            let es_tls = stream.peek(&mut primero).is_ok_and(|n| n == 1 && primero[0] == 0x16);
+            // El candado se quita UNA sola vez. `terminate` vuelve a entrar por este mismo
+            // puerto desde 127.0.0.1 con los bytes ya descifrados, que los elige el cliente: si
+            // esos bytes empezaran otra vez por 0x16 se volvería a desenvolver, sin tope de
+            // profundidad y saltándose el límite por IP, a dos hilos y dos descriptores por
+            // nivel (auditoría de seguridad, 20-11-2026). Una conexión que llega por loopback ya
+            // viene del candado, así que va directa al puente.
+            //
+            // Nota para quien despliegue: si se pone un proxy inverso en el mismo equipo delante
+            // de este puente, todas las conexiones llegarán como loopback y el candado dejará de
+            // aplicarse aquí; en ese montaje el TLS lo termina el proxy.
+            let es_tls = !ip.is_loopback() && stream.peek(&mut primero).is_ok_and(|n| n == 1 && primero[0] == 0x16);
             #[cfg(not(target_arch = "wasm32"))]
             if let (true, Some((cert, key)), Some(yo)) = (es_tls, &tls, yo) {
                 let _ = crate::tls::config(cert, key).and_then(|cfg| crate::tls::terminate(stream, cfg, yo));
