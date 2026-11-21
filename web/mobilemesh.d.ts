@@ -60,6 +60,8 @@ export interface Collection {
 export interface StartOptions {
   /** Marca de la aplicación; si se omite se usa el dominio de la página. */
   appId?: string;
+    /** Ruta del trabajador, si tu empaquetador rompe la ruta relativa (Angular, Ionic). */
+    workerUrl?: string | URL;
 }
 
 /**

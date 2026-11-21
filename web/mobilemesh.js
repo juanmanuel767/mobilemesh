@@ -20,17 +20,32 @@ export class MobileMesh {
    * Starts MobileMesh in this page: loads the core in a worker and connects the network.
    * Arranca MobileMesh en la página: carga el núcleo en un trabajador y conecta la red.
    */
-  static async start({ appId } = {}) {
+  static async start({ appId, workerUrl } = {}) {
     if (!self.crossOriginIsolated) throw new Error("La página necesita las cabeceras COOP y COEP (ver mobilemesh.js)");
     // Marca («lote») de esta aplicación: solo las páginas con la misma marca se comunican entre
     // sí. Si no se indica, se usa el dominio, que ya es igual para todos tus usuarios.
     const marca = (appId ?? location.hostname ?? "").toLowerCase().replace(/[^a-z0-9._-]/g, "-") || "localhost";
     const canal = new MessageChannel();
     iniciarRed(canal.port1);
-    const worker = new Worker(new URL("./nucleo-worker.js", import.meta.url), { type: "module" });
+    // Algunos empaquetadores (Angular, Ionic) reescriben `import.meta.url` y la ruta relativa
+    // deja de apuntar al trabajador. Con `workerUrl` se le pasa la buena a mano.
+    const url = workerUrl ?? new URL("./nucleo-worker.js", import.meta.url);
+    const worker = new Worker(url, { type: "module" });
     const m = new MobileMesh(worker);
     await new Promise((listo, falla) => {
-      worker.onmessage = ({ data }) => (data.t !== "listo" ? m.#respuesta(data) : data.error ? falla(new Error(data.error)) : listo());
+      // Si el empaquetador no sirve el trabajador o el .wasm, el worker no contesta nunca y la
+      // app se queda colgada sin decir nada. Mejor rendirse y explicar qué mirar.
+      const plazo = setTimeout(
+        () => falla(new Error(
+          "MobileMesh no arrancó en 30 s: tu empaquetador no está sirviendo nucleo-worker.js o " +
+          "el .wasm. Excluye «mobilemesh» del preempaquetado (en Vite: optimizeDeps.exclude) y " +
+          "comprueba que los archivos de node_modules/mobilemesh/pkg/ se sirven tal cual.")),
+        30000,
+      );
+      const acabar = (fn, arg) => { clearTimeout(plazo); fn(arg); };
+      worker.onerror = (e) => acabar(falla, new Error(`no se pudo cargar el núcleo: ${e.message ?? e.type}`));
+      worker.onmessage = ({ data }) =>
+        data.t !== "listo" ? m.#respuesta(data) : data.error ? acabar(falla, new Error(data.error)) : acabar(listo);
       worker.postMessage({ t: "iniciar", red: canal.port2, appId: marca }, [canal.port2]);
     });
     worker.onmessage = ({ data }) => m.#respuesta(data);

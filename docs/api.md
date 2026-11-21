@@ -153,6 +153,8 @@ La sincronización automática ocurre sola cada pocos segundos; `syncWith` solo 
 
 ✅ existe hoy · ❌ falta. Node, Flutter y Swift todavía no tienen SDK.
 
+El SDK web está probado con el paquete real de npm en React, Vue, Angular e Ionic.
+
 | Operación | Android/Kotlin | Web/JS | React Native | Node | Flutter | Swift |
 |---|---|---|---|---|---|---|
 | `start` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |

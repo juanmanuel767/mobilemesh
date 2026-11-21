@@ -149,6 +149,8 @@ conservan; estas las reutilizan.
 
 ### React (Vite)
 
+Probada con el paquete real de npm: crea la cuenta y guarda datos.
+
 ```sh
 npm create vite@latest mi-app -- --template react
 cd mi-app && npm install
@@ -191,6 +193,8 @@ export default function App() {
 
 ### Vue (Vite)
 
+Probada con el paquete real de npm: crea la cuenta y guarda datos.
+
 ```sh
 npm create vite@latest mi-app -- --template vue
 cd mi-app && npm install
@@ -213,13 +217,14 @@ onMounted(async () => {
 
 ### Angular (CLI)
 
+Probada con el paquete real de npm: crea la cuenta y guarda datos.
+
 ```sh
 ng new mi-app --standalone
 cd mi-app && npm install mobilemesh
 ```
 
-En `angular.json`, dentro del proyecto y de `architect.serve.options`, añade las cabeceras del
-servidor de desarrollo:
+Las cabeceras van en `angular.json`, dentro del proyecto y de `architect.serve.options`:
 
 ```json
 "serve": {
@@ -234,51 +239,103 @@ servidor de desarrollo:
 
 Si tu versión de Angular CLI no acepta `headers` en `serve`, sirve `dist/` con un servidor propio
 (nginx/Apache o `web/servir.py`) que las añada; un `proxy.conf.json` no sirve para esto porque
-gestiona peticiones salientes, no cabeceras de respuesta. Uso mínimo:
+gestiona peticiones salientes, no cabeceras de respuesta.
+
+La vista debe usar `signal()`: en Angular moderno, sin zone.js, una propiedad normal no refresca la
+pantalla cuando llegan los datos.
 
 ```ts
-import { Component, OnInit } from "@angular/core";
+import { Component, OnInit, signal } from "@angular/core";
 import { MobileMesh } from "mobilemesh";
 
-@Component({ selector: "app-root", standalone: true, template: "" })
+@Component({
+  selector: "app-root",
+  standalone: true,
+  template: `{{ total() }} tareas`,
+})
 export class AppComponent implements OnInit {
+  total = signal(0);
+
   async ngOnInit() {
-    const mesh = await MobileMesh.start({ appId: "mi-web" });
-    await mesh.collection("tareas").save("t1", { titulo: "Comprar pan" });
+    const mesh = await MobileMesh.start({ appId: "mi-app" });
+    const tareas = mesh.collection("tareas");
+    await tareas.save("t1", { titulo: "Comprar pan" });
+    this.total.set((await tareas.all()).length);
   }
 }
 ```
 
-Si el empaquetador de Angular no copia `nucleo-worker.js` ni `pkg/`, copia esos archivos a
-`src/assets/mobilemesh/` y cárgalos desde ahí; no los dejes fuera del build.
+### Ionic (Angular)
 
-### Ionic (Capacitor)
+Probada con el paquete real de npm. Además de lo de Angular hacen falta dos cosas más.
 
 ```sh
-ionic start mi-app blank --type=react
+ionic start mi-app blank --type=angular
 cd mi-app && npm install mobilemesh
 ```
 
-En el servidor de desarrollo (`ionic serve`, que usa Vite en React/Vue) añade las mismas cabeceras
-en `vite.config.ts`:
+1. Las cabeceras, igual que en Angular: en `angular.json`, `projects.<nombre>.architect.serve.options.headers`
+   con `Cross-Origin-Opener-Policy: same-origin` y `Cross-Origin-Embedder-Policy: require-corp`.
 
-```ts
-server: {
-  headers: {
-    "Cross-Origin-Opener-Policy": "same-origin",
-    "Cross-Origin-Embedder-Policy": "require-corp",
-  },
-},
+2. Excluir el paquete del preempaquetado, en `architect.serve.options`:
+
+```json
+"prebundle": { "exclude": ["mobilemesh"] }
 ```
 
-Uso mínimo, igual que en React/Vue: `MobileMesh.start({ appId: "mi-web" })` dentro de un
-`useEffect`/`onMounted` y `collection("tareas").save(...)`.
+Si no, la copia preempaquetada rompe la carga del núcleo.
+
+3. Copiar `nucleo-worker.js`, `red.js` y la carpeta `pkg/` de `node_modules/mobilemesh/` a
+   `src/assets/mobilemesh/`, y declararlos como assets en `angular.json`:
+
+```json
+{ "glob": "**/*", "input": "src/assets/mobilemesh", "output": "mobilemesh" }
+```
+
+4. Arrancar indicando `workerUrl`:
+
+```ts
+import { Component, OnInit, signal } from "@angular/core";
+import { MobileMesh } from "mobilemesh";
+
+@Component({
+  selector: "app-root",
+  standalone: true,
+  template: `{{ total() }} tareas`,
+})
+export class AppComponent implements OnInit {
+  total = signal(0);
+
+  async ngOnInit() {
+    const mesh = await MobileMesh.start({
+      appId: "mi-app",
+      workerUrl: new URL("mobilemesh/nucleo-worker.js", document.baseURI),
+    });
+    const tareas = mesh.collection("tareas");
+    await tareas.save("t1", { titulo: "Comprar pan" });
+    this.total.set((await tareas.all()).length);
+  }
+}
+```
+
+Angular e Ionic reescriben `import.meta.url` dentro del paquete, así que la ruta relativa al
+trabajador deja de valer; por eso `start` acepta `workerUrl`.
 
 **Aviso para Android con Capacitor:** las cabeceras del servidor de desarrollo no llegan al WebView
 de la app. En Android dentro de Capacitor hay que añadir COOP/COEP a las respuestas del WebView en
 el lado nativo; si no, `crossOriginIsolated` es falso y `MobileMesh.start()` lanza el error de
 cabeceras. La forma exacta de interceptar esas respuestas depende de la versión de Capacitor y de su
 esquema local, así que no la damos aquí como receta fija.
+
+## Si no arranca
+
+- **`start()` falla a los 30 segundos.** Si el núcleo no carga, `start()` ya no se cuelga: falla a
+  los 30 s con un mensaje que explica qué revisar. Suele ser una ruta equivocada de
+  `nucleo-worker.js` o `pkg/`, o un empaquetador que ha reescrito `import.meta.url`. En Angular e
+  Ionic pasa `workerUrl`.
+- **`crossOriginIsolated` es falso.** Faltan las cabeceras COOP/COEP de la sección 2.
+- **`workerUrl`.** `MobileMesh.start({ appId, workerUrl })` acepta una URL explícita al trabajador
+  para cuando la ruta relativa al paquete no vale.
 
 ## 5. Diferencias con Android
 
