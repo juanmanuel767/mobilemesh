@@ -47,10 +47,21 @@ private const val PUERTO_PUBLICO = 7956
 /** Relés universales a los que preguntar «¿con qué IP me ves?» para saber mi IP pública. */
 private val RELES_QUIEN = listOf("mobilemeshjuan.duckdns.org" to 7900)
 
-/** Al encender el móvil (o al actualizar la app) arranca el relé. */
+/**
+ * Al encender el móvil (o al actualizar la app) arranca el relé.
+ *
+ * Un receptor exportado acepta también intents explícitos de cualquier app del teléfono, no solo
+ * los del sistema que pide el filtro. Por eso se comprueba la acción: sin comprobarla, otra app
+ * podía provocar `startForegroundService` desde segundo plano, donde Android 12+ lanza
+ * `ForegroundServiceStartNotAllowedException`; al no capturarla se cerraba el proceso del relé y
+ * con él sus procesos hijo, de forma repetible (auditoría de seguridad, 20-11-2026).
+ */
 class Arranque : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
-        c.startForegroundService(Intent(c, ReleService::class.java))
+        if (i.action != Intent.ACTION_BOOT_COMPLETED && i.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        // Si Android no permite arrancarlo en este momento, se queda sin arrancar: lo abrirá el
+        // usuario. Lo que no puede pasar es que la excepción se lleve por delante al relé.
+        runCatching { c.startForegroundService(Intent(c, ReleService::class.java)) }
     }
 }
 
