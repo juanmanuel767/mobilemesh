@@ -87,8 +87,18 @@ fn valid_addr(a: &str) -> bool {
     a.rsplit_once(':').is_some_and(|(h, p)| !h.is_empty() && p.parse::<u16>().is_ok())
 }
 
+/// Partes como máximo en una ruta. Una ruta legítima llega a seis: el supernodo elegido, su
+/// dirección de la wifi, los dos relés que devuelve `relay::choose` y las direcciones directas
+/// IPv4 e IPv6. El tope existe porque `Session::connect` lanza un hilo por parte y espera
+/// `VENTAJA * i` antes de cada una: una ruta de miles de partes, que la elige quien llama,
+/// retiene el bucle que la usa durante minutos (auditoría de seguridad, 20-11-2026).
+pub const MAX_PARTES_RUTA: usize = 16;
+
 /// Comprueba que una ruta tiene buen formato (sin conectar).
 pub fn check_route(route: &str) -> Result<()> {
+    if route.split('|').count() > MAX_PARTES_RUTA {
+        return Err(format!("la ruta tiene demasiadas partes (máximo {MAX_PARTES_RUTA})").into());
+    }
     for part in route.split('|').map(str::trim) {
         match part.strip_prefix("relay=") {
             Some(rest) => {
